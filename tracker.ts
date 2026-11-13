@@ -31,8 +31,28 @@ export type SleepEntry = { id: string; date: string; hours: number };
 export type MeasurementEntry = {
   id: string;
   date: string;
+  bustCm?: number;
+  underbustCm?: number;
   waistCm?: number;
+  abdomenCm?: number;
   hipsCm?: number;
+  glutesCm?: number;
+  leftThighCm?: number;
+  rightThighCm?: number;
+  leftArmCm?: number;
+  rightArmCm?: number;
+  leftForearmCm?: number;
+  rightForearmCm?: number;
+  leftCalfCm?: number;
+  rightCalfCm?: number;
+  neckCm?: number;
+};
+
+export type DailyActivityEntry = {
+  date: string;
+  steps?: number;
+  activeCalories?: number;
+  source?: 'manual' | 'healthkit';
 };
 
 export type FitlogData = {
@@ -45,6 +65,7 @@ export type FitlogData = {
   sleep: SleepEntry[];
   measurements: MeasurementEntry[];
   waterByDate: Record<string, number>;
+  activityByDate?: Record<string, DailyActivityEntry>;
 };
 
 export const STORAGE_KEY = '@fitlog/data/v1';
@@ -71,5 +92,6 @@ export function createInitialData(profile: AssessmentInput, assessment: Assessme
     sleep: [],
     measurements: [],
     waterByDate: {},
+    activityByDate: {},
   };
 }
