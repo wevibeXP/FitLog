@@ -136,11 +136,6 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
   const [stepsInput, setStepsInput] = useState(activity?.steps != null ? String(activity.steps) : '');
   const [activeCaloriesInput, setActiveCaloriesInput] = useState(activity?.activeCalories != null ? String(activity.activeCalories) : '');
   const [activitySaved, setActivitySaved] = useState(false);
-  useEffect(() => {
-    setStepsInput(activity?.steps != null ? String(activity.steps) : '');
-    setActiveCaloriesInput(activity?.activeCalories != null ? String(activity.activeCalories) : '');
-    setActivitySaved(false);
-  }, [date, activity?.steps, activity?.activeCalories]);
   const saveDailyMovement = () => {
     const steps = stepsInput.trim() === '' ? undefined : Number(stepsInput);
     const activeCalories = activeCaloriesInput.trim() === '' ? undefined : Number(activeCaloriesInput);
@@ -708,9 +703,10 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
     <Card>
       {data.measurements.length === 0 ? <EmptyState emoji="🌿" title="Your first measurements will live here" subtitle="You can create a check-in with just one measurement or a full set." /> :
         data.measurements.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5).map(entry => {
+          const measurementRecord = entry as unknown as Record<string, unknown>;
           const values = measurementFields
-            .filter(field => (entry as Record<string, unknown>)[field.key] !== undefined)
-            .map(field => field.label + ' ' + Number((entry as Record<string, unknown>)[field.key]).toFixed(1) + ' cm');
+            .filter(field => measurementRecord[field.key] !== undefined)
+            .map(field => field.label + ' ' + Number(measurementRecord[field.key]).toFixed(1) + ' cm');
           return <View key={entry.id} style={{ paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#F4EEF3' }}>
             <Text style={{ color: C.text, fontWeight: '900', fontSize: 12 }}>{entry.date}</Text>
             <Text style={{ color: C.muted, fontSize: 10, lineHeight: 17, marginTop: 5 }}>{values.join('  ·  ') || 'No measurement values'}</Text>
