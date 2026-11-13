@@ -132,6 +132,41 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
   const food = data.food.filter(item => item.date === date);
   const workouts = data.workouts.filter(item => item.date === date);
   const water = data.waterByDate[date] || 0;
+  const activity = data.activityByDate?.[date];
+  const [stepsInput, setStepsInput] = useState(activity?.steps != null ? String(activity.steps) : '');
+  const [activeCaloriesInput, setActiveCaloriesInput] = useState(activity?.activeCalories != null ? String(activity.activeCalories) : '');
+  const [activitySaved, setActivitySaved] = useState(false);
+  useEffect(() => {
+    setStepsInput(activity?.steps != null ? String(activity.steps) : '');
+    setActiveCaloriesInput(activity?.activeCalories != null ? String(activity.activeCalories) : '');
+    setActivitySaved(false);
+  }, [date, activity?.steps, activity?.activeCalories]);
+  const saveDailyMovement = () => {
+    const steps = stepsInput.trim() === '' ? undefined : Number(stepsInput);
+    const activeCalories = activeCaloriesInput.trim() === '' ? undefined : Number(activeCaloriesInput);
+    if (steps === undefined && activeCalories === undefined) {
+      Alert.alert('Add a movement stat', 'Enter your steps, active calories, or both.');
+      return;
+    }
+    if ((steps !== undefined && (!Number.isInteger(steps) || steps < 0 || steps > 100000)) ||
+        (activeCalories !== undefined && (!Number.isFinite(activeCalories) || activeCalories < 0 || activeCalories > 5000))) {
+      Alert.alert('Check those numbers', 'Steps must be 0–100,000 and active calories must be 0–5,000 kcal.');
+      return;
+    }
+    update(current => ({
+      ...current,
+      activityByDate: {
+        ...(current.activityByDate || {}),
+        [date]: {
+          date,
+          steps,
+          activeCalories,
+          source: 'manual',
+        },
+      },
+    }));
+    setActivitySaved(true);
+  };
   const totals = food.reduce((sum, item) => ({
     calories: sum.calories + item.calories,
     protein: sum.protein + item.protein,
@@ -191,6 +226,34 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
           </View>
         </View>
       </>}
+    </Card>
+
+    <Card style={{ backgroundColor: '#FFFCFA' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View>
+          <Eyebrow>DAILY MOVEMENT</Eyebrow>
+          <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 5 }}>Your steps & burn 👟</Text>
+        </View>
+        <Text style={{ fontSize: 23 }}>🔥</Text>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 13 }}>
+        <View style={{ flex: 1, backgroundColor: C.mint, padding: 13, borderRadius: 16 }}>
+          <Text style={{ color: C.green, fontSize: 10, fontWeight: '900', letterSpacing: 0.7 }}>STEPS WALKED</Text>
+          <Text style={{ color: C.text, fontSize: 25, fontWeight: '900', marginTop: 5 }}>{activity?.steps != null ? activity.steps.toLocaleString('en-IN') : '—'}</Text>
+          <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>steps today</Text>
+        </View>
+        <View style={{ flex: 1, backgroundColor: C.peach, padding: 13, borderRadius: 16 }}>
+          <Text style={{ color: C.rose, fontSize: 10, fontWeight: '900', letterSpacing: 0.7 }}>ACTIVE CALORIES</Text>
+          <Text style={{ color: C.text, fontSize: 25, fontWeight: '900', marginTop: 5 }}>{activity?.activeCalories != null ? Math.round(activity.activeCalories) : '—'}</Text>
+          <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>kcal reported active</Text>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 9, marginTop: 15 }}>
+        <View style={{ flex: 1 }}><TextField label="Steps" value={stepsInput} onChange={value => { setStepsInput(value); setActivitySaved(false); }} placeholder="e.g. 7,500" keyboardType="numeric" /></View>
+        <View style={{ flex: 1 }}><TextField label="Active calories" value={activeCaloriesInput} onChange={value => { setActiveCaloriesInput(value); setActivitySaved(false); }} placeholder="e.g. 320" keyboardType="decimal-pad" suffix="kcal" /></View>
+      </View>
+      <ActionButton label={activitySaved ? 'MOVEMENT STATS SAVED ✓' : 'SAVE DAILY MOVEMENT'} onPress={saveDailyMovement} tone="soft" />
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>Manual entry for now. You can copy these numbers from Apple Fitness. Automatic Apple Health step and active-energy sync is a future native integration.</Text>
     </Card>
 
     <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -519,10 +582,32 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
 
 function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: UpdateData; onReset: () => void }) {
   const [weight, setWeight] = useState('');
-  const [waist, setWaist] = useState('');
-  const [hips, setHips] = useState('');
+  const [measurementUnit, setMeasurementUnit] = useState<'cm' | 'in'>('cm');
+  const [measurementValues, setMeasurementValues] = useState<Record<string, string>>({
+    bustCm: '', underbustCm: '', waistCm: '', abdomenCm: '', hipsCm: '', glutesCm: '',
+    leftThighCm: '', rightThighCm: '', leftArmCm: '', rightArmCm: '',
+    leftForearmCm: '', rightForearmCm: '', leftCalfCm: '', rightCalfCm: '', neckCm: '',
+  });
   const [sleep, setSleep] = useState('');
   const date = localDateKey();
+  const measurementFields: { key: string; label: string }[] = [
+    { key: 'bustCm', label: 'Bust / chest' },
+    { key: 'underbustCm', label: 'Underbust' },
+    { key: 'waistCm', label: 'Waist' },
+    { key: 'abdomenCm', label: 'Lower abdomen' },
+    { key: 'hipsCm', label: 'Hips' },
+    { key: 'glutesCm', label: 'Glutes' },
+    { key: 'leftThighCm', label: 'Left thigh' },
+    { key: 'rightThighCm', label: 'Right thigh' },
+    { key: 'leftArmCm', label: 'Left upper arm' },
+    { key: 'rightArmCm', label: 'Right upper arm' },
+    { key: 'leftForearmCm', label: 'Left forearm' },
+    { key: 'rightForearmCm', label: 'Right forearm' },
+    { key: 'leftCalfCm', label: 'Left calf' },
+    { key: 'rightCalfCm', label: 'Right calf' },
+    { key: 'neckCm', label: 'Neck' },
+  ];
+  const changeMeasurement = (key: string, value: string) => setMeasurementValues(current => ({ ...current, [key]: value }));
   const sortedWeights = data.weights.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   const latest = sortedWeights[0];
   const previous = sortedWeights.find(item => item.id !== latest?.id);
@@ -536,19 +621,32 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
     setWeight('');
   };
   const addMeasurements = () => {
-    const waistValue = waist.trim() ? Number(waist) : undefined;
-    const hipsValue = hips.trim() ? Number(hips) : undefined;
-    if (waistValue === undefined && hipsValue === undefined) {
-      Alert.alert('Add a measurement', 'Enter waist, hips or both in centimetres.');
+    const values: Record<string, number> = {};
+    for (const field of measurementFields) {
+      const raw = measurementValues[field.key]?.trim();
+      if (!raw) continue;
+      const entered = Number(raw);
+      const cm = measurementUnit === 'in' ? entered * 2.54 : entered;
+      if (!Number.isFinite(cm) || cm < 5 || cm > 300) {
+        Alert.alert('Check ' + field.label.toLowerCase(), 'Enter a value between 5 and 300 ' + measurementUnit + '.');
+        return;
+      }
+      values[field.key] = Math.round(cm * 10) / 10;
+    }
+    if (Object.keys(values).length === 0) {
+      Alert.alert('Add a measurement', 'Enter at least one measurement. You can leave the others blank.');
       return;
     }
-    if ((waistValue !== undefined && (!Number.isFinite(waistValue) || waistValue < 30 || waistValue > 250)) ||
-        (hipsValue !== undefined && (!Number.isFinite(hipsValue) || hipsValue < 30 || hipsValue > 250))) {
-      Alert.alert('Check the measurements', 'Enter values in centimetres between 30 and 250.');
-      return;
-    }
-    update(current => ({ ...current, measurements: [...current.measurements, { id: makeId(), date, waistCm: waistValue, hipsCm: hipsValue }] }));
-    setWaist(''); setHips('');
+    update(current => ({
+      ...current,
+      measurements: [...current.measurements, { id: makeId(), date, ...values }],
+    }));
+    setMeasurementValues({
+      bustCm: '', underbustCm: '', waistCm: '', abdomenCm: '', hipsCm: '', glutesCm: '',
+      leftThighCm: '', rightThighCm: '', leftArmCm: '', rightArmCm: '',
+      leftForearmCm: '', rightForearmCm: '', leftCalfCm: '', rightCalfCm: '', neckCm: '',
+    });
+    Alert.alert('Measurements saved 🌷', 'Your check-in has been added to your history.');
   };
   const addSleep = () => {
     const hours = Number(sleep);
@@ -581,13 +679,43 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
       </View>
     </Card>
     <Card>
-      <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginBottom: 13 }}>Body measurements 📏</Text>
-      <View style={{ flexDirection: 'row', gap: 9 }}>
-        <View style={{ flex: 1 }}><TextField label="Waist" value={waist} onChange={setWaist} placeholder="e.g. 72" keyboardType="decimal-pad" suffix="cm" /></View>
-        <View style={{ flex: 1 }}><TextField label="Hips" value={hips} onChange={setHips} placeholder="e.g. 96" keyboardType="decimal-pad" suffix="cm" /></View>
+      <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginBottom: 5 }}>Body measurements 📏</Text>
+      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginBottom: 14 }}>Track as many or as few as you like. Leave anything blank if you don't want to record it.</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }}>
+        <Eyebrow>MEASUREMENT UNIT</Eyebrow>
+        <View style={{ flexDirection: 'row' }}>
+          <Chip label="cm" selected={measurementUnit === 'cm'} onPress={() => setMeasurementUnit('cm')} />
+          <Chip label="inches" selected={measurementUnit === 'in'} onPress={() => setMeasurementUnit('in')} />
+        </View>
       </View>
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.3, marginBottom: 9 }}>TORSO</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+        {measurementFields.slice(0, 6).map(field => <View key={field.key} style={{ width: '48%' }}>
+          <TextField label={field.label} value={measurementValues[field.key]} onChange={value => changeMeasurement(field.key, value)} placeholder="—" keyboardType="decimal-pad" suffix={measurementUnit} />
+        </View>)}
+      </View>
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.3, marginTop: 4, marginBottom: 9 }}>LEGS & ARMS</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+        {measurementFields.slice(6, 14).map(field => <View key={field.key} style={{ width: '48%' }}>
+          <TextField label={field.label} value={measurementValues[field.key]} onChange={value => changeMeasurement(field.key, value)} placeholder="—" keyboardType="decimal-pad" suffix={measurementUnit} />
+        </View>)}
+      </View>
+      <TextField label="Neck" value={measurementValues.neckCm} onChange={value => changeMeasurement('neckCm', value)} placeholder="—" keyboardType="decimal-pad" suffix={measurementUnit} />
       <ActionButton label="SAVE MEASUREMENTS  +" onPress={addMeasurements} tone="soft" />
-      {lastMeasurements && <Text style={{ color: C.muted, fontSize: 11, marginTop: 12 }}>Latest: {lastMeasurements.waistCm ? 'Waist ' + lastMeasurements.waistCm + ' cm' : ''}{lastMeasurements.waistCm && lastMeasurements.hipsCm ? '  ·  ' : ''}{lastMeasurements.hipsCm ? 'Hips ' + lastMeasurements.hipsCm + ' cm' : ''} · {lastMeasurements.date}</Text>}
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>Saved values are stored in centimetres, even when entered in inches, so your history stays consistent.</Text>
+    </Card>
+    <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginBottom: 9 }}>Measurement history</Text>
+    <Card>
+      {data.measurements.length === 0 ? <EmptyState emoji="🌿" title="Your first measurements will live here" subtitle="You can create a check-in with just one measurement or a full set." /> :
+        data.measurements.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5).map(entry => {
+          const values = measurementFields
+            .filter(field => (entry as Record<string, unknown>)[field.key] !== undefined)
+            .map(field => field.label + ' ' + Number((entry as Record<string, unknown>)[field.key]).toFixed(1) + ' cm');
+          return <View key={entry.id} style={{ paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#F4EEF3' }}>
+            <Text style={{ color: C.text, fontWeight: '900', fontSize: 12 }}>{entry.date}</Text>
+            <Text style={{ color: C.muted, fontSize: 10, lineHeight: 17, marginTop: 5 }}>{values.join('  ·  ') || 'No measurement values'}</Text>
+          </View>;
+        })}
     </Card>
     <Card style={{ backgroundColor: C.mint, borderColor: '#D8E9DC' }}>
       <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginBottom: 6 }}>How did you sleep? 🌙</Text>
