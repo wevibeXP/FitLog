@@ -1,52 +1,515 @@
-import React,{useState} from 'react';
-import {SafeAreaView,StatusBar,Text,View,TouchableOpacity,ScrollView} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Onboarding from './Onboarding';
-import {AssessmentInput,assess} from './assessment';
+import { assess, AssessmentInput } from './assessment';
+import {
+  createInitialData,
+  FitlogData,
+  FoodEntry,
+  MealType,
+  makeId,
+  localDateKey,
+  STORAGE_KEY,
+  WorkoutEntry,
+} from './tracker';
 
-const C={
- bg:'#FFF9F4',panel:'#FFFFFF',text:'#393340',muted:'#897F8D',
- accent:'#9A83D4',line:'#EAE1EB',mint:'#E2F1E8',peach:'#FBE8DF'
+const C = {
+  bg: '#FFF9F4',
+  panel: '#FFFFFF',
+  text: '#393340',
+  muted: '#897F8D',
+  accent: '#9A83D4',
+  line: '#EAE1EB',
+  mint: '#E2F1E8',
+  peach: '#FBE8DF',
+  butter: '#FFF2D8',
+  lilac: '#F0EAFB',
+  green: '#547A66',
+  rose: '#9C6955',
 };
 
-export default function App(){
- const [profile,setProfile]=useState<AssessmentInput|null>(null);
- const [result,setResult]=useState<ReturnType<typeof assess>|null>(null);
- return <SafeAreaView style={{flex:1,backgroundColor:C.bg}}>
-  <StatusBar barStyle="dark-content"/>
-  {!profile||!result?<Onboarding onComplete={(p,r)=>{setProfile(p);setResult(r)}}/>:
-   <ScrollView contentContainerStyle={{padding:24,paddingBottom:44}}>
-    <View style={{alignSelf:'flex-start',backgroundColor:C.mint,paddingHorizontal:13,paddingVertical:8,borderRadius:30}}>
-     <Text style={{color:'#547A66',fontWeight:'800',letterSpacing:2,fontSize:10}}>FITLOG  ·  YOUR BASELINE</Text>
-    </View>
-    <Text style={{color:C.text,fontSize:32,fontWeight:'900',letterSpacing:0.2,marginTop:22}}>Look at you, getting started ✨</Text>
-    <Text style={{color:C.muted,lineHeight:23,letterSpacing:0.1,marginTop:9}}>Your first Fitlog assessment is ready. This is a starting point we can refine as you log meals, movement and recovery.</Text>
-    <View style={{backgroundColor:C.panel,borderRadius:25,borderWidth:1,borderColor:C.line,padding:21,marginTop:25,shadowColor:'#7D688D',shadowOpacity:0.07,shadowRadius:16,shadowOffset:{width:0,height:7},elevation:2}}>
-     <Text style={{color:C.muted,fontSize:11,fontWeight:'800',letterSpacing:1.8}}>YOUR DAILY STARTING POINT</Text>
-     {result.targetCalories===null?<View style={{backgroundColor:C.peach,borderRadius:16,padding:15,marginTop:16}}>
-       <Text style={{color:'#8D5B48',fontWeight:'800',lineHeight:21}}>Your calorie and macro targets are on pause while you get the right professional guidance.</Text>
-      </View>:<>
-      <Text style={{color:C.accent,fontSize:42,fontWeight:'900',letterSpacing:-1,marginTop:10}}>{result.targetCalories} <Text style={{fontSize:16,fontWeight:'700',letterSpacing:0}}>kcal / day</Text></Text>
-      <View style={{height:1,backgroundColor:C.line,marginVertical:17}}/>
-      <View style={{flexDirection:'row',gap:8}}>
-       <View style={{flex:1,backgroundColor:'#F0EAFB',borderRadius:16,padding:12}}>
-        <Text style={{color:'#7864AC',fontSize:10,fontWeight:'800',letterSpacing:1}}>PROTEIN</Text>
-        <Text style={{color:C.text,fontWeight:'900',fontSize:20,marginTop:5}}>{result.macros?.proteinG}g</Text>
-       </View>
-       <View style={{flex:1,backgroundColor:C.mint,borderRadius:16,padding:12}}>
-        <Text style={{color:'#547A66',fontSize:10,fontWeight:'800',letterSpacing:1}}>CARBS</Text>
-        <Text style={{color:C.text,fontWeight:'900',fontSize:20,marginTop:5}}>{result.macros?.carbsG}g</Text>
-       </View>
-       <View style={{flex:1,backgroundColor:C.peach,borderRadius:16,padding:12}}>
-        <Text style={{color:'#9C6955',fontSize:10,fontWeight:'800',letterSpacing:1}}>FAT</Text>
-        <Text style={{color:C.text,fontWeight:'900',fontSize:20,marginTop:5}}>{result.macros?.fatG}g</Text>
-       </View>
+type Tab = 'today' | 'food' | 'move' | 'progress';
+type UpdateData = (recipe: (current: FitlogData) => FitlogData) => void;
+
+function Card({ children, style }: { children: React.ReactNode; style?: object }) {
+  return <View style={[{ backgroundColor: C.panel, borderRadius: 23, borderWidth: 1, borderColor: C.line, padding: 18, marginBottom: 14, shadowColor: '#7D688D', shadowOpacity: 0.045, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 1 }, style]}>{children}</View>;
+}
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.7 }}>{children}</Text>;
+}
+
+function PageTitle({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle: string }) {
+  return <View style={{ marginBottom: 21 }}>
+    <Eyebrow>{eyebrow}</Eyebrow>
+    <Text style={{ color: C.text, fontSize: 30, fontWeight: '900', letterSpacing: 0.1, marginTop: 8 }}>{title}</Text>
+    <Text style={{ color: C.muted, fontSize: 13, lineHeight: 20, marginTop: 6 }}>{subtitle}</Text>
+  </View>;
+}
+
+function ActionButton({ label, onPress, disabled = false, tone = 'primary' }: { label: string; onPress: () => void; disabled?: boolean; tone?: 'primary' | 'soft' | 'outline' }) {
+  const backgroundColor = tone === 'primary' ? (disabled ? '#EDE7EF' : C.accent) : tone === 'soft' ? C.lilac : C.panel;
+  const borderColor = tone === 'outline' ? C.line : backgroundColor;
+  const color = disabled ? '#A99EAC' : tone === 'primary' ? '#FFFFFF' : C.accent;
+  return <TouchableOpacity activeOpacity={0.84} disabled={disabled} onPress={onPress} style={{ backgroundColor, borderWidth: 1, borderColor, paddingVertical: 14, paddingHorizontal: 16, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
+    <Text style={{ color, fontSize: 12, fontWeight: '900', letterSpacing: 0.8 }}>{label}</Text>
+  </TouchableOpacity>;
+}
+
+function TextField({ label, value, onChange, placeholder, keyboardType = 'default', suffix }: {
+  label: string; value: string; onChange: (value: string) => void; placeholder: string;
+  keyboardType?: 'default' | 'numeric' | 'decimal-pad'; suffix?: string;
+}) {
+  return <View style={{ marginBottom: 13 }}>
+    <Text style={{ color: C.muted, fontSize: 11, fontWeight: '800', letterSpacing: 0.6, marginBottom: 7 }}>{label}{suffix ? '  ·  ' + suffix : ''}</Text>
+    <TextInput
+      value={value}
+      onChangeText={onChange}
+      placeholder={placeholder}
+      placeholderTextColor="#B0A6B1"
+      keyboardType={keyboardType}
+      selectionColor={C.accent}
+      style={{ backgroundColor: '#FFFCFA', borderColor: C.line, borderWidth: 1, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 13, color: C.text, fontSize: 15 }}
+    />
+  </View>;
+}
+
+function ProgressBar({ value, target, color }: { value: number; target: number; color: string }) {
+  const width = target > 0 ? Math.min(100, Math.max(0, (value / target) * 100)) : 0;
+  return <View style={{ height: 8, backgroundColor: '#F1ECF1', borderRadius: 8, overflow: 'hidden', marginTop: 7 }}>
+    <View style={{ height: 8, width: width + '%', backgroundColor: color, borderRadius: 8 }} />
+  </View>;
+}
+
+function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return <TouchableOpacity onPress={onPress} style={{ paddingVertical: 9, paddingHorizontal: 13, backgroundColor: selected ? C.lilac : C.panel, borderRadius: 30, borderWidth: 1, borderColor: selected ? C.accent : C.line, marginRight: 7, marginBottom: 7 }}>
+    <Text style={{ color: selected ? C.accent : C.muted, fontWeight: '800', fontSize: 11 }}>{label}</Text>
+  </TouchableOpacity>;
+}
+
+function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; subtitle: string }) {
+  return <View style={{ alignItems: 'center', paddingVertical: 22, paddingHorizontal: 12 }}>
+    <Text style={{ fontSize: 28 }}>{emoji}</Text>
+    <Text style={{ color: C.text, fontWeight: '900', marginTop: 9 }}>{title}</Text>
+    <Text style={{ color: C.muted, fontSize: 12, textAlign: 'center', lineHeight: 18, marginTop: 5 }}>{subtitle}</Text>
+  </View>;
+}
+
+function TabBar({ selected, onSelect }: { selected: Tab; onSelect: (tab: Tab) => void }) {
+  const items: { key: Tab; emoji: string; label: string }[] = [
+    { key: 'today', emoji: '☀️', label: 'Today' },
+    { key: 'food', emoji: '🍓', label: 'Food' },
+    { key: 'move', emoji: '🧘', label: 'Move' },
+    { key: 'progress', emoji: '🌷', label: 'Progress' },
+  ];
+  return <View style={{ flexDirection: 'row', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10, paddingBottom: 5, paddingHorizontal: 9 }}>
+    {items.map(item => {
+      const active = selected === item.key;
+      return <TouchableOpacity key={item.key} onPress={() => onSelect(item.key)} style={{ flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 16, backgroundColor: active ? C.lilac : 'transparent' }}>
+        <Text style={{ fontSize: 18 }}>{item.emoji}</Text>
+        <Text style={{ color: active ? C.accent : C.muted, fontSize: 10, fontWeight: active ? '900' : '700', marginTop: 3, letterSpacing: 0.3 }}>{item.label}</Text>
+      </TouchableOpacity>;
+    })}
+  </View>;
+}
+
+function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateData; goTo: (tab: Tab) => void }) {
+  const date = localDateKey();
+  const food = data.food.filter(item => item.date === date);
+  const workouts = data.workouts.filter(item => item.date === date);
+  const water = data.waterByDate[date] || 0;
+  const totals = food.reduce((sum, item) => ({
+    calories: sum.calories + item.calories,
+    protein: sum.protein + item.protein,
+    carbs: sum.carbs + item.carbs,
+    fat: sum.fat + item.fat,
+  }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const target = data.assessment.targetCalories;
+  const macros = data.assessment.macros;
+  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  const dateLabel = new Intl.DateTimeFormat('en-IN', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
+  const addWater = (amount: number) => update(current => ({ ...current, waterByDate: { ...current.waterByDate, [date]: (current.waterByDate[date] || 0) + amount } }));
+
+  return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 28 }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
+      <View>
+        <Eyebrow>FITLOG  ✳  YOUR LITTLE WELLNESS SPACE</Eyebrow>
+        <Text style={{ color: C.text, fontSize: 28, fontWeight: '900', marginTop: 8 }}>{greeting} ☁️</Text>
+        <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>{dateLabel}</Text>
       </View>
-     </>}
+      <View style={{ backgroundColor: C.mint, width: 49, height: 49, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 23 }}>🌼</Text>
+      </View>
     </View>
-    <TouchableOpacity onPress={()=>{setProfile(null);setResult(null)}} style={{padding:17,borderRadius:18,backgroundColor:C.accent,marginTop:19,alignItems:'center',shadowColor:C.accent,shadowOpacity:0.2,shadowRadius:10,shadowOffset:{width:0,height:5},elevation:2}}>
-     <Text style={{color:'#FFFFFF',fontWeight:'900',letterSpacing:1}}>EDIT MY ASSESSMENT</Text>
-    </TouchableOpacity>
-    <Text style={{color:C.muted,fontSize:11,lineHeight:18,marginTop:20,letterSpacing:0.1}}>Little prototype note: this profile is currently held in app memory and resets when the app reloads. Saving, accounts and Apple Health are coming in later milestones.</Text>
-   </ScrollView>}
- </SafeAreaView>;
+
+    <Card style={{ backgroundColor: '#F2ECFB', borderColor: '#E6DDF4' }}>
+      <Eyebrow>YOUR DAILY NOURISHMENT</Eyebrow>
+      {target === null ? <View style={{ marginTop: 13 }}>
+        <Text style={{ color: C.text, fontSize: 19, fontWeight: '900' }}>Your calorie target is paused</Text>
+        <Text style={{ color: C.muted, fontSize: 12, lineHeight: 19, marginTop: 6 }}>You can still log meals and notice patterns while you get personalised guidance.</Text>
+      </View> : <>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 10 }}>
+          <View>
+            <Text style={{ color: C.accent, fontSize: 38, fontWeight: '900', letterSpacing: -1 }}>{Math.round(totals.calories)}</Text>
+            <Text style={{ color: C.muted, fontSize: 11, fontWeight: '700' }}>calories logged</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end', paddingBottom: 4 }}>
+            <Text style={{ color: C.text, fontSize: 16, fontWeight: '900' }}>{Math.max(0, Math.round(target - totals.calories))}</Text>
+            <Text style={{ color: C.muted, fontSize: 10 }}>remaining of {target}</Text>
+          </View>
+        </View>
+        <ProgressBar value={totals.calories} target={target} color={C.accent} />
+        <View style={{ flexDirection: 'row', marginTop: 17, gap: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#7964AE', fontSize: 10, fontWeight: '900', letterSpacing: 0.6 }}>PROTEIN</Text>
+            <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginTop: 4 }}>{Math.round(totals.protein)}<Text style={{ fontSize: 10, color: C.muted }}> / {macros?.proteinG ?? '—'}g</Text></Text>
+            {macros && <ProgressBar value={totals.protein} target={macros.proteinG} color="#A38BD9" />}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.green, fontSize: 10, fontWeight: '900', letterSpacing: 0.6 }}>CARBS</Text>
+            <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginTop: 4 }}>{Math.round(totals.carbs)}<Text style={{ fontSize: 10, color: C.muted }}> / {macros?.carbsG ?? '—'}g</Text></Text>
+            {macros && <ProgressBar value={totals.carbs} target={macros.carbsG} color="#8DBA9D" />}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.rose, fontSize: 10, fontWeight: '900', letterSpacing: 0.6 }}>FAT</Text>
+            <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginTop: 4 }}>{Math.round(totals.fat)}<Text style={{ fontSize: 10, color: C.muted }}> / {macros?.fatG ?? '—'}g</Text></Text>
+            {macros && <ProgressBar value={totals.fat} target={macros.fatG} color="#E5AE98" />}
+          </View>
+        </View>
+      </>}
+    </Card>
+
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <Card style={{ flex: 1, backgroundColor: C.mint, borderColor: '#D5E8DC' }}>
+        <Text style={{ fontSize: 21 }}>💧</Text>
+        <Text style={{ color: C.text, fontSize: 22, fontWeight: '900', marginTop: 8 }}>{water}<Text style={{ fontSize: 11 }}> ml</Text></Text>
+        <Text style={{ color: C.green, fontSize: 10, fontWeight: '800', marginTop: 2 }}>WATER LOGGED</Text>
+        <TouchableOpacity onPress={() => addWater(250)} style={{ marginTop: 12, backgroundColor: '#FFFFFF', padding: 9, borderRadius: 12, alignItems: 'center' }}>
+          <Text style={{ color: C.green, fontSize: 11, fontWeight: '900' }}>+ 250 ml</Text>
+        </TouchableOpacity>
+      </Card>
+      <Card style={{ flex: 1, backgroundColor: C.peach, borderColor: '#F2DED5' }}>
+        <Text style={{ fontSize: 21 }}>🏃‍♀️</Text>
+        <Text style={{ color: C.text, fontSize: 22, fontWeight: '900', marginTop: 8 }}>{workouts.length}</Text>
+        <Text style={{ color: C.rose, fontSize: 10, fontWeight: '800', marginTop: 2 }}>WORKOUTS TODAY</Text>
+        <TouchableOpacity onPress={() => goTo('move')} style={{ marginTop: 12, backgroundColor: '#FFFFFF', padding: 9, borderRadius: 12, alignItems: 'center' }}>
+          <Text style={{ color: C.rose, fontSize: 11, fontWeight: '900' }}>Log movement</Text>
+        </TouchableOpacity>
+      </Card>
+    </View>
+
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 7, marginBottom: 9 }}>
+      <Text style={{ color: C.text, fontSize: 19, fontWeight: '900' }}>A little nourishment</Text>
+      <TouchableOpacity onPress={() => goTo('food')}><Text style={{ color: C.accent, fontWeight: '900', fontSize: 11 }}>ADD FOOD +</Text></TouchableOpacity>
+    </View>
+    <Card>
+      {food.length === 0 ? <EmptyState emoji="🍑" title="Your food diary is waiting" subtitle="Add your first meal or snack. Small logs make useful patterns over time." /> :
+        food.slice().reverse().slice(0, 4).map(item => <FoodRow key={item.id} item={item} />)}
+    </Card>
+    <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 1, textAlign: 'center' }}>Gentle reminder: these are estimates, not rules. Eat enough, enjoy your food and listen to your body. 🌷</Text>
+  </ScrollView>;
+}
+
+function FoodRow({ item }: { item: FoodEntry }) {
+  return <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F4EEF3' }}>
+    <View style={{ width: 37, height: 37, borderRadius: 13, backgroundColor: C.peach, alignItems: 'center', justifyContent: 'center', marginRight: 11 }}>
+      <Text style={{ fontSize: 17 }}>{item.meal === 'Breakfast' ? '🍳' : item.meal === 'Lunch' ? '🥗' : item.meal === 'Dinner' ? '🍲' : '🍓'}</Text>
+    </View>
+    <View style={{ flex: 1 }}>
+      <Text style={{ color: C.text, fontWeight: '800', fontSize: 13 }}>{item.name}</Text>
+      <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.meal} · P {item.protein}g · C {item.carbs}g · F {item.fat}g</Text>
+    </View>
+    <Text style={{ color: C.text, fontWeight: '900', fontSize: 13 }}>{item.calories} kcal</Text>
+  </View>;
+}
+
+function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
+  const [name, setName] = useState('');
+  const [meal, setMeal] = useState<MealType>('Breakfast');
+  const [calories, setCalories] = useState('');
+  const [protein, setProtein] = useState('');
+  const [carbs, setCarbs] = useState('');
+  const [fat, setFat] = useState('');
+  const date = localDateKey();
+  const todaysFood = data.food.filter(item => item.date === date);
+  const totals = todaysFood.reduce((sum, item) => ({ kcal: sum.kcal + item.calories, p: sum.p + item.protein, c: sum.c + item.carbs, f: sum.f + item.fat }), { kcal: 0, p: 0, c: 0, f: 0 });
+  const addFood = () => {
+    const kcal = Number(calories);
+    if (!name.trim() || !Number.isFinite(kcal) || kcal <= 0) {
+      Alert.alert('A tiny bit more info', 'Add a food name and calories greater than zero.');
+      return;
+    }
+    const item: FoodEntry = { id: makeId(), date, name: name.trim(), meal, calories: kcal, protein: Number(protein) || 0, carbs: Number(carbs) || 0, fat: Number(fat) || 0, createdAt: Date.now() };
+    update(current => ({ ...current, food: [...current.food, item] }));
+    setName(''); setCalories(''); setProtein(''); setCarbs(''); setFat('');
+  };
+  const removeFood = (id: string) => Alert.alert('Remove this entry?', 'This only removes the selected food log.', [
+    { text: 'Keep it', style: 'cancel' },
+    { text: 'Remove', style: 'destructive', onPress: () => update(current => ({ ...current, food: current.food.filter(item => item.id !== id) })) },
+  ]);
+
+  return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
+    <PageTitle eyebrow="FOOD JOURNAL  ✳  ONE BITE AT A TIME" title="Nourish yourself 🍓" subtitle="Log what you eat without making food a maths exam. Manual entries are saved on this iPhone." />
+    <Card style={{ backgroundColor: C.lilac }}>
+      <Eyebrow>TODAY'S TOTAL</Eyebrow>
+      <Text style={{ color: C.text, fontSize: 31, fontWeight: '900', marginTop: 8 }}>{Math.round(totals.kcal)} <Text style={{ fontSize: 13, color: C.muted }}>kcal logged</Text></Text>
+      <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Protein {Math.round(totals.p)}g  ·  Carbs {Math.round(totals.c)}g  ·  Fat {Math.round(totals.f)}g</Text>
+    </Card>
+    <Card>
+      <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 15 }}>Add a food ✨</Text>
+      <Text style={{ color: C.muted, fontSize: 11, fontWeight: '800', marginBottom: 9 }}>MEAL</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {(['Breakfast', 'Lunch', 'Dinner', 'Snack'] as MealType[]).map(option => <Chip key={option} label={option} selected={meal === option} onPress={() => setMeal(option)} />)}
+      </View>
+      <TextField label="Food or dish" value={name} onChange={setName} placeholder="e.g. 2 eggs and toast" />
+      <TextField label="Calories" value={calories} onChange={setCalories} placeholder="e.g. 320" keyboardType="decimal-pad" suffix="kcal" />
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ flex: 1 }}><TextField label="Protein" value={protein} onChange={setProtein} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+        <View style={{ flex: 1 }}><TextField label="Carbs" value={carbs} onChange={setCarbs} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+        <View style={{ flex: 1 }}><TextField label="Fat" value={fat} onChange={setFat} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+      </View>
+      <ActionButton label="SAVE FOOD ENTRY  + " onPress={addFood} />
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 10 }}>Nutrition values are estimates. You can use package labels or a trusted nutrition source for more accurate entries.</Text>
+    </Card>
+    <Text style={{ color: C.text, fontSize: 19, fontWeight: '900', marginBottom: 10 }}>Today's diary</Text>
+    <Card>
+      {todaysFood.length === 0 ? <EmptyState emoji="🥣" title="Nothing logged yet" subtitle="Your entries will show up here as you add them." /> :
+        todaysFood.slice().reverse().map(item => <View key={item.id}>
+          <FoodRow item={item} />
+          <TouchableOpacity onPress={() => removeFood(item.id)} style={{ alignSelf: 'flex-end', paddingVertical: 5 }}><Text style={{ color: '#B27D87', fontWeight: '800', fontSize: 10 }}>REMOVE</Text></TouchableOpacity>
+        </View>)}
+    </Card>
+    <Card style={{ backgroundColor: C.butter, borderColor: '#F0E5CA' }}>
+      <Text style={{ color: C.text, fontWeight: '900' }}>📷 Food photo scan</Text>
+      <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>AI portion and nutrition recognition is planned for a later milestone. For now, manual entries keep your diary usable.</Text>
+    </Card>
+  </ScrollView>;
+}
+
+function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('Strength');
+  const [minutes, setMinutes] = useState('');
+  const date = localDateKey();
+  const options = ['Strength', 'Pilates', 'Walk', 'Run', 'Cycling', 'Mobility', 'Other'];
+  const todays = data.workouts.filter(item => item.date === date);
+  const totalMinutes = todays.reduce((sum, item) => sum + item.minutes, 0);
+  const addWorkout = () => {
+    const duration = Number(minutes);
+    if (!name.trim() || !Number.isFinite(duration) || duration <= 0) {
+      Alert.alert('Add your movement', 'Enter an activity and its duration in minutes.');
+      return;
+    }
+    const item: WorkoutEntry = { id: makeId(), date, name: name.trim(), category, minutes: duration, createdAt: Date.now() };
+    update(current => ({ ...current, workouts: [...current.workouts, item] }));
+    setName(''); setMinutes('');
+  };
+  const removeWorkout = (id: string) => Alert.alert('Remove workout?', 'This will remove the selected activity log.', [
+    { text: 'Keep it', style: 'cancel' },
+    { text: 'Remove', style: 'destructive', onPress: () => update(current => ({ ...current, workouts: current.workouts.filter(item => item.id !== id) })) },
+  ]);
+
+  return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
+    <PageTitle eyebrow="MOVEMENT JOURNAL  ✳  YOUR PACE, YOUR WAY" title="Move a little 🌱" subtitle="Strength, Pilates, running, walks or a stretch break. It all counts as movement." />
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <Card style={{ flex: 1, backgroundColor: C.mint }}>
+        <Text style={{ fontSize: 21 }}>🌼</Text>
+        <Text style={{ color: C.text, fontSize: 26, fontWeight: '900', marginTop: 7 }}>{todays.length}</Text>
+        <Text style={{ color: C.green, fontWeight: '800', fontSize: 10 }}>SESSIONS TODAY</Text>
+      </Card>
+      <Card style={{ flex: 1, backgroundColor: C.peach }}>
+        <Text style={{ fontSize: 21 }}>⏱️</Text>
+        <Text style={{ color: C.text, fontSize: 26, fontWeight: '900', marginTop: 7 }}>{totalMinutes}</Text>
+        <Text style={{ color: C.rose, fontWeight: '800', fontSize: 10 }}>MINUTES MOVED</Text>
+      </Card>
+    </View>
+    <Card>
+      <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 15 }}>Log a session</Text>
+      <Text style={{ color: C.muted, fontSize: 11, fontWeight: '800', marginBottom: 9 }}>WHAT DID YOU DO?</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {options.map(option => <Chip key={option} label={option} selected={category === option} onPress={() => setCategory(option)} />)}
+      </View>
+      <TextField label="Activity" value={name} onChange={setName} placeholder={category === 'Strength' ? 'e.g. Upper body session' : 'e.g. Evening walk'} />
+      <TextField label="Duration" value={minutes} onChange={setMinutes} placeholder="e.g. 35" keyboardType="decimal-pad" suffix="minutes" />
+      <ActionButton label="SAVE MOVEMENT  +" onPress={addWorkout} />
+    </Card>
+    <Text style={{ color: C.text, fontSize: 19, fontWeight: '900', marginBottom: 10 }}>Today's movement</Text>
+    <Card>
+      {todays.length === 0 ? <EmptyState emoji="🧘‍♀️" title="No sessions logged yet" subtitle="Rest days count too. Add movement only when it happens." /> :
+        todays.slice().reverse().map(item => <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#F4EEF3' }}>
+          <View style={{ width: 40, height: 40, backgroundColor: C.lilac, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 11 }}><Text style={{ fontSize: 18 }}>{item.category === 'Strength' ? '🏋️' : item.category === 'Pilates' ? '🧘' : item.category === 'Run' ? '🏃' : item.category === 'Walk' ? '🚶' : '🌿'}</Text></View>
+          <View style={{ flex: 1 }}><Text style={{ color: C.text, fontWeight: '900', fontSize: 13 }}>{item.name}</Text><Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.category}</Text></View>
+          <Text style={{ color: C.text, fontWeight: '900' }}>{item.minutes} min</Text>
+          <TouchableOpacity onPress={() => removeWorkout(item.id)} style={{ marginLeft: 9, padding: 5 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>
+        </View>)}
+    </Card>
+    <Card style={{ backgroundColor: C.butter, borderColor: '#F0E5CA' }}>
+      <Text style={{ color: C.text, fontWeight: '900' }}>A note on recovery ☁️</Text>
+      <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>Fitlog doesn't assign calorie credits for workouts. Move because it supports your strength, energy and wellbeing—not to earn food.</Text>
+    </Card>
+  </ScrollView>;
+}
+
+function ProgressScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
+  const [weight, setWeight] = useState('');
+  const [waist, setWaist] = useState('');
+  const [hips, setHips] = useState('');
+  const [sleep, setSleep] = useState('');
+  const date = localDateKey();
+  const sortedWeights = data.weights.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  const latest = sortedWeights[0];
+  const previous = sortedWeights.find(item => item.id !== latest?.id);
+  const addWeight = () => {
+    const value = Number(weight);
+    if (!Number.isFinite(value) || value < 20 || value > 400) {
+      Alert.alert('Check that weight', 'Enter a weight in kilograms between 20 and 400.');
+      return;
+    }
+    update(current => ({ ...current, weights: [...current.weights, { id: makeId(), date, kg: value }] }));
+    setWeight('');
+  };
+  const addMeasurements = () => {
+    const waistValue = waist.trim() ? Number(waist) : undefined;
+    const hipsValue = hips.trim() ? Number(hips) : undefined;
+    if (waistValue === undefined && hipsValue === undefined) {
+      Alert.alert('Add a measurement', 'Enter waist, hips or both in centimetres.');
+      return;
+    }
+    if ((waistValue !== undefined && (!Number.isFinite(waistValue) || waistValue < 30 || waistValue > 250)) ||
+        (hipsValue !== undefined && (!Number.isFinite(hipsValue) || hipsValue < 30 || hipsValue > 250))) {
+      Alert.alert('Check the measurements', 'Enter values in centimetres between 30 and 250.');
+      return;
+    }
+    update(current => ({ ...current, measurements: [...current.measurements, { id: makeId(), date, waistCm: waistValue, hipsCm: hipsValue }] }));
+    setWaist(''); setHips('');
+  };
+  const addSleep = () => {
+    const hours = Number(sleep);
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) {
+      Alert.alert('Check your sleep entry', 'Enter a number of hours between 0 and 24.');
+      return;
+    }
+    update(current => ({ ...current, sleep: [...current.sleep, { id: makeId(), date, hours }] }));
+    setSleep('');
+  };
+  const lastMeasurements = data.measurements.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  const lastSleep = data.sleep.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+
+  return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
+    <PageTitle eyebrow="YOUR CHECK-INS  ✳  PROGRESS, NOT PERFECTION" title="Notice your growth 🌷" subtitle="A few calm check-ins help you notice longer-term patterns. No daily judgement, no pressure." />
+    <Card style={{ backgroundColor: C.lilac }}>
+      <Eyebrow>YOUR WEIGHT CHECK-IN</Eyebrow>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }}>
+        <View>
+          <Text style={{ color: C.text, fontSize: 30, fontWeight: '900' }}>{latest ? latest.kg.toFixed(1) : '—'} <Text style={{ color: C.muted, fontSize: 12 }}>kg</Text></Text>
+          <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{latest ? 'Latest entry · ' + latest.date : 'No weigh-in yet'}</Text>
+        </View>
+        {previous && <View style={{ alignItems: 'flex-end' }}><Text style={{ color: C.accent, fontSize: 16, fontWeight: '900' }}>{(latest.kg - previous.kg) > 0 ? '+' : ''}{(latest.kg - previous.kg).toFixed(1)} kg</Text><Text style={{ color: C.muted, fontSize: 10 }}>vs previous entry</Text></View>}
+      </View>
+      <View style={{ height: 1, backgroundColor: '#E3D9F0', marginVertical: 15 }} />
+      <Text style={{ color: C.muted, fontSize: 11 }}>Goal weight · {data.profile.goalWeightKg.toFixed(1)} kg</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 9, marginTop: 13 }}>
+        <View style={{ flex: 1 }}><TextField label="New weigh-in" value={weight} onChange={setWeight} placeholder="e.g. 62.5" keyboardType="decimal-pad" suffix="kg" /></View>
+        <View style={{ paddingBottom: 13 }}><ActionButton label="SAVE" onPress={addWeight} /></View>
+      </View>
+    </Card>
+    <Card>
+      <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginBottom: 13 }}>Body measurements 📏</Text>
+      <View style={{ flexDirection: 'row', gap: 9 }}>
+        <View style={{ flex: 1 }}><TextField label="Waist" value={waist} onChange={setWaist} placeholder="e.g. 72" keyboardType="decimal-pad" suffix="cm" /></View>
+        <View style={{ flex: 1 }}><TextField label="Hips" value={hips} onChange={setHips} placeholder="e.g. 96" keyboardType="decimal-pad" suffix="cm" /></View>
+      </View>
+      <ActionButton label="SAVE MEASUREMENTS  +" onPress={addMeasurements} tone="soft" />
+      {lastMeasurements && <Text style={{ color: C.muted, fontSize: 11, marginTop: 12 }}>Latest: {lastMeasurements.waistCm ? 'Waist ' + lastMeasurements.waistCm + ' cm' : ''}{lastMeasurements.waistCm && lastMeasurements.hipsCm ? '  ·  ' : ''}{lastMeasurements.hipsCm ? 'Hips ' + lastMeasurements.hipsCm + ' cm' : ''} · {lastMeasurements.date}</Text>}
+    </Card>
+    <Card style={{ backgroundColor: C.mint, borderColor: '#D8E9DC' }}>
+      <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginBottom: 6 }}>How did you sleep? 🌙</Text>
+      <Text style={{ color: C.muted, fontSize: 11, marginBottom: 12 }}>Log your sleep duration. Connect Apple Health later for automatic imports.</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 9 }}>
+        <View style={{ flex: 1 }}><TextField label="Sleep duration" value={sleep} onChange={setSleep} placeholder="e.g. 7.5" keyboardType="decimal-pad" suffix="hours" /></View>
+        <View style={{ paddingBottom: 13 }}><ActionButton label="SAVE" onPress={addSleep} /></View>
+      </View>
+      {lastSleep && <Text style={{ color: C.green, fontSize: 11, fontWeight: '800' }}>Latest: {lastSleep.hours} hours · {lastSleep.date}</Text>}
+    </Card>
+    <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginBottom: 9 }}>Recent weigh-ins</Text>
+    <Card>
+      {sortedWeights.length === 0 ? <EmptyState emoji="🌱" title="Your first check-in is waiting" subtitle="Add a weigh-in whenever it feels useful. You don't need to weigh every day." /> :
+        sortedWeights.slice(0, 7).map(item => <View key={item.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F4EEF3' }}>
+          <Text style={{ color: C.muted, fontSize: 12 }}>{item.date}</Text><Text style={{ color: C.text, fontWeight: '900' }}>{item.kg.toFixed(1)} kg</Text>
+        </View>)}
+    </Card>
+    <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, textAlign: 'center' }}>Weight naturally fluctuates with hydration, digestion, training and your cycle. Look at longer trends, not single readings.</Text>
+  </ScrollView>;
+}
+
+function LoadingScreen() {
+  return <View style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', alignItems: 'center' }}>
+    <Text style={{ fontSize: 34 }}>🌷</Text>
+    <Text style={{ color: C.text, fontSize: 19, fontWeight: '900', marginTop: 12 }}>Getting your little space ready...</Text>
+  </View>;
+}
+
+export default function App() {
+  const [data, setData] = useState<FitlogData | null>(null);
+  const [ready, setReady] = useState(false);
+  const [tab, setTab] = useState<Tab>('today');
+  const [saveFailed, setSaveFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(STORAGE_KEY)
+      .then(raw => {
+        if (!active || !raw) return;
+        const parsed = JSON.parse(raw) as FitlogData;
+        if (parsed && parsed.version === 1 && parsed.profile && parsed.assessment) setData(parsed);
+      })
+      .catch(() => {
+        if (active) Alert.alert('Could not load saved Fitlog data', 'Your previous entries may be unavailable. You can still start a fresh profile on this device.');
+      })
+      .finally(() => { if (active) setReady(true); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!data || !ready) return;
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+      .then(() => setSaveFailed(false))
+      .catch(() => setSaveFailed(true));
+  }, [data, ready]);
+
+  const update: UpdateData = recipe => setData(current => current ? recipe(current) : current);
+  const finishOnboarding = (profile: AssessmentInput) => {
+    const result = assess(profile);
+    setData(createInitialData(profile, result));
+    setTab('today');
+  };
+
+  if (!ready) return <SafeAreaProvider><SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}><LoadingScreen /></SafeAreaView></SafeAreaProvider>;
+  return <SafeAreaProvider>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="dark-content" />
+      {!data ? <Onboarding onComplete={(profile) => finishOnboarding(profile)} /> : <>
+        <View style={{ flex: 1 }}>
+          {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} />}
+          {tab === 'food' && <FoodScreen data={data} update={update} />}
+          {tab === 'move' && <MoveScreen data={data} update={update} />}
+          {tab === 'progress' && <ProgressScreen data={data} update={update} />}
+          {saveFailed && <Text style={{ color: '#A45F60', fontSize: 10, textAlign: 'center', paddingVertical: 4 }}>Could not save changes to this iPhone. Check available storage.</Text>}
+        </View>
+        <TabBar selected={tab} onSelect={setTab} />
+      </>}
+    </SafeAreaView>
+  </SafeAreaProvider>;
 }
