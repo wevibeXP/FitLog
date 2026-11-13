@@ -38,6 +38,15 @@ export type SleepEntry = {
   source?: 'manual' | 'healthkit';
   healthKitSampleIds?: string[];
 };
+export type PeriodCycleEntry = {
+  id: string;
+  startDate: string;
+  endDate: string;
+  flow: 'unspecified' | 'light' | 'medium' | 'heavy';
+  source: 'healthkit';
+  healthKitSampleIds: string[];
+};
+
 export type MeasurementEntry = {
   id: string;
   date: string;
@@ -76,6 +85,7 @@ export type FitlogData = {
   measurements: MeasurementEntry[];
   waterByDate: Record<string, number>;
   activityByDate?: Record<string, DailyActivityEntry>;
+  periodCycles?: PeriodCycleEntry[];
   healthSync?: {
     setupRequested: boolean;
     lastSyncAt?: number;
