@@ -35,7 +35,7 @@ export default function Onboarding({onComplete}:Props){
  return <View style={{flex:1,backgroundColor:C.bg}}>
   <ScrollView contentContainerStyle={{padding:22,paddingBottom:36}}>
    <Text style={{color:C.accent,fontWeight:'900',letterSpacing:2,fontSize:12}}>FITLOG · PERSONAL ASSESSMENT</Text>
-   <View style={{height:5,backgroundColor:C.panel2,borderRadius:8,marginTop:18,marginBottom:22,overflow:'hidden'}}><View style={{height:5,width={\`\${((step+1)/6)*100}%\`},backgroundColor:C.accent}}/></View>
+   <View style={{height:5,backgroundColor:C.panel2,borderRadius:8,marginTop:18,marginBottom:22,overflow:'hidden'}}><View style={{height:5,width:(step+1)/6*100+'%',backgroundColor:C.accent}}/></View>
    <Text style={{color:C.muted,fontSize:12}}>STEP {step+1} OF 6</Text>
    <Text style={{color:C.text,fontSize:27,fontWeight:'900',marginTop:5,marginBottom:8}}>{titles[step]}</Text>
    <Text style={{color:C.muted,lineHeight:21,marginBottom:20}}>{step===0?'We need a few basics to estimate your energy needs. You can review everything before accepting a plan.':step===1?'Choose the outcome you want. Fitlog will check whether your target and timeline are realistic.':step===2?'Daily movement matters as much as planned workouts. Choose the option that best describes a typical week.':step===3?'Your food preferences help us create targets and recommendations you can actually follow.':step===4?'Share only what you are comfortable sharing. This helps Fitlog avoid inappropriate recommendations.': 'Here is your initial estimate. It is a starting point, not a medical measurement.'}</Text>
