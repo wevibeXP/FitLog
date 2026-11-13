@@ -689,6 +689,22 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
   };
   const lastMeasurements = data.measurements.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
   const lastSleep = data.sleep.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  const periodCycles = (data.periodCycles ?? []).slice().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const cycleStartsAscending = periodCycles.map(item => item.startDate).sort();
+  const cycleIntervals = cycleStartsAscending.slice(1).map((start, index) => {
+    const earlier = new Date(cycleStartsAscending[index] + 'T12:00:00');
+    const later = new Date(start + 'T12:00:00');
+    return Math.round((later.getTime() - earlier.getTime()) / 86_400_000);
+  }).filter(days => days > 0 && days < 100);
+  const averageCycleLength = cycleIntervals.length > 0
+    ? Math.round(cycleIntervals.reduce((sum, days) => sum + days, 0) / cycleIntervals.length)
+    : null;
+  const formatCycleDate = (value: string) => new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value + 'T12:00:00'));
+  const getPeriodDays = (entry: (typeof periodCycles)[number]) => {
+    const start = new Date(entry.startDate + 'T12:00:00');
+    const end = new Date(entry.endDate + 'T12:00:00');
+    return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1);
+  };
 
   return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
     <PageTitle eyebrow="YOUR CHECK-INS  ✳  PROGRESS, NOT PERFECTION" title="Notice your growth 🌷" subtitle="A few calm check-ins help you notice longer-term patterns. No daily judgement, no pressure." />
@@ -756,6 +772,35 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
         <View style={{ paddingBottom: 13 }}><ActionButton label="SAVE" onPress={addSleep} /></View>
       </View>
       {lastSleep && <Text style={{ color: C.green, fontSize: 11, fontWeight: '800' }}>Latest: {lastSleep.hours} hours · {lastSleep.date}{lastSleep.source === 'healthkit' ? ' · Apple Health' : ''}</Text>}
+    </Card>
+    <Card style={{ backgroundColor: '#FFF5F7', borderColor: '#F0DEE5' }}>
+      <Eyebrow>REPRODUCTIVE HEALTH  ✳  APPLE HEALTH</Eyebrow>
+      <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginTop: 5 }}>Cycle history 🌸</Text>
+      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 6 }}>
+        Period logs you recorded in Apple Health. Fitlog uses HealthKit's recorded cycle-start markers and does not predict your next period or ovulation.
+      </Text>
+      {periodCycles.length === 0 ? <EmptyState emoji="🌷" title="No period records imported yet" subtitle="Connect Apple Health on the Today screen, then allow Menstrual Flow access to see your recorded periods here." /> : <>
+        <View style={{ flexDirection: 'row', gap: 9, marginTop: 14 }}>
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 12, borderRadius: 14 }}>
+            <Text style={{ color: C.rose, fontSize: 9, fontWeight: '900', letterSpacing: 0.5 }}>LAST RECORDED START</Text>
+            <Text style={{ color: C.text, fontSize: 14, fontWeight: '900', marginTop: 6 }}>{formatCycleDate(periodCycles[0].startDate)}</Text>
+          </View>
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 12, borderRadius: 14 }}>
+            <Text style={{ color: C.rose, fontSize: 9, fontWeight: '900', letterSpacing: 0.5 }}>AVERAGE RECORDED CYCLE</Text>
+            <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 6 }}>{averageCycleLength != null ? averageCycleLength + ' days' : '—'}</Text>
+            <Text style={{ color: C.muted, fontSize: 9, marginTop: 2 }}>{cycleIntervals.length} interval{cycleIntervals.length === 1 ? '' : 's'} recorded</Text>
+          </View>
+        </View>
+        <Text style={{ color: C.text, fontWeight: '900', fontSize: 13, marginTop: 16, marginBottom: 4 }}>Recent periods</Text>
+        {periodCycles.slice(0, 6).map(entry => <View key={entry.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3E5EA' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.text, fontWeight: '900', fontSize: 12 }}>{formatCycleDate(entry.startDate)}</Text>
+            <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>Recorded duration · {getPeriodDays(entry)} day{getPeriodDays(entry) === 1 ? '' : 's'}</Text>
+          </View>
+          <Text style={{ color: C.rose, fontSize: 11, fontWeight: '900', textTransform: 'capitalize' }}>{entry.flow} flow</Text>
+        </View>)}
+      </>}
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 15, marginTop: 11 }}>Only your recorded period entries are shown. Cycle averages describe past dates and are not a forecast or contraceptive guidance.</Text>
     </Card>
     <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginBottom: 9 }}>Recent weigh-ins</Text>
     <Card>
@@ -853,7 +898,7 @@ export default function App() {
       if (result.summary.queryWarnings.length > 0) {
         setHealthSyncError('Apple Health was checked, but some categories could not be read: ' + result.summary.queryWarnings.join(' · '));
       } else if (result.summary.steps === null && result.summary.activeCalories === null &&
-                 result.summary.workoutsImported === 0 && result.summary.sleepNightsImported === 0) {
+                 result.summary.workoutsImported === 0 && result.summary.sleepNightsImported === 0 && result.summary.periodsImported === 0) {
         setHealthSyncError('Apple Health was checked, but Fitlog did not receive shared samples. Check Health app → profile → Apps and Services → Fitlog, and allow the categories you want to share.');
       } else {
         setHealthSyncError(null);
