@@ -1,19 +1,22 @@
 {
   "name": "fitlog",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start --tunnel",
     "ios": "expo start --ios --tunnel",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:ios:development": "eas build --platform ios --profile development"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
     "expo": "~58.0.25",
     "react": "19.3.0",
     "react-native": "0.88.1",
-    "react-native-safe-area-context": "~5.11.1"
+    "react-native-safe-area-context": "~5.11.1",
+    "@appeeky/expo-healthkit": "~0.4.2",
+    "expo-dev-client": "~58.0.20"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
