@@ -7,7 +7,7 @@ export default function App(){
  const [profile,setProfile]=useState<AssessmentInput|null>(null);
  const [result,setResult]=useState<ReturnType<typeof assess>|null>(null);
  return <SafeAreaView style={{flex:1,backgroundColor:C.bg}}>
-  <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
+  <StatusBar barStyle="light-content"/>
   {!profile||!result?<Onboarding onComplete={(p,r)=>{setProfile(p);setResult(r)}}/>:
    <ScrollView contentContainerStyle={{padding:22,paddingBottom:40}}>
     <Text style={{color:C.accent,fontWeight:'900',letterSpacing:2,fontSize:12}}>FITLOG · YOUR BASELINE</Text>
