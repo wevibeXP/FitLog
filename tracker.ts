@@ -13,6 +13,8 @@ export type FoodEntry = {
   carbs: number;
   fat: number;
   createdAt: number;
+  estimateMethod?: 'catalogue' | 'manual';
+  ingredients?: Array<{ foodId: string; name: string; grams: number }>;
 };
 
 export type WorkoutEntry = {
