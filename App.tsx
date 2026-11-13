@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -16,6 +16,7 @@ import Onboarding from './Onboarding';
 import { assess, AssessmentInput } from './assessment';
 import { estimateFood, searchFoods, suggestAmount } from './nutrition';
 import type { NutritionFood, NutritionUnit, FoodEstimate } from './nutrition';
+import { subscribeToAppleHealthUpdates, syncAppleHealth } from './health';
 import {
   createInitialData,
   FitlogData,
@@ -127,7 +128,7 @@ function TabBar({ selected, onSelect }: { selected: Tab; onSelect: (tab: Tab) =>
   </View>;
 }
 
-function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateData; goTo: (tab: Tab) => void }) {
+function TodayScreen({ data, update, goTo, onSyncAppleHealth, healthSyncing, healthSyncError }: { data: FitlogData; update: UpdateData; goTo: (tab: Tab) => void; onSyncAppleHealth: () => void; healthSyncing: boolean; healthSyncError: string | null }) {
   const date = localDateKey();
   const food = data.food.filter(item => item.date === date);
   const workouts = data.workouts.filter(item => item.date === date);
@@ -136,6 +137,11 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
   const [stepsInput, setStepsInput] = useState(activity?.steps != null ? String(activity.steps) : '');
   const [activeCaloriesInput, setActiveCaloriesInput] = useState(activity?.activeCalories != null ? String(activity.activeCalories) : '');
   const [activitySaved, setActivitySaved] = useState(false);
+  useEffect(() => {
+    setStepsInput(activity?.steps != null ? String(activity.steps) : '');
+    setActiveCaloriesInput(activity?.activeCalories != null ? String(activity.activeCalories) : '');
+    setActivitySaved(false);
+  }, [date, activity?.steps, activity?.activeCalories]);
   const saveDailyMovement = () => {
     const steps = stepsInput.trim() === '' ? undefined : Number(stepsInput);
     const activeCalories = activeCaloriesInput.trim() === '' ? undefined : Number(activeCaloriesInput);
@@ -223,6 +229,35 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
       </>}
     </Card>
 
+    <Card style={{ backgroundColor: '#F2ECFB', borderColor: '#E6DDF4' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flex: 1 }}>
+          <Eyebrow>APPLE HEALTH  ✳  READ-ONLY SYNC</Eyebrow>
+          <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 5 }}>Your health, together 💜</Text>
+          <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }}>
+            {data.healthSync?.lastSyncAt
+              ? 'Last checked ' + new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.healthSync.lastSyncAt))
+              : 'Connect Apple Health to bring in steps, active energy, workouts and sleep.'}
+          </Text>
+        </View>
+        <Text style={{ fontSize: 25, marginLeft: 8 }}>♡</Text>
+      </View>
+      <View style={{ marginTop: 13 }}>
+        <ActionButton
+          label={healthSyncing ? 'CHECKING APPLE HEALTH…' : data.healthSync?.setupRequested ? 'SYNC APPLE HEALTH NOW' : 'CONNECT & SYNC APPLE HEALTH'}
+          onPress={onSyncAppleHealth}
+          disabled={healthSyncing}
+        />
+      </View>
+      {healthSyncError && <Text style={{ color: '#A45F60', fontSize: 11, lineHeight: 17, marginTop: 9 }}>{healthSyncError}</Text>}
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>
+        Fitlog only reads these categories; it never writes to Apple Health. Read access is controlled in the Health app and iOS does not tell apps which read permissions were granted. A blank value can mean no shared samples or no access.
+      </Text>
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 4 }}>
+        Background updates are best-effort and scheduled by iOS. Steps and active energy are generally delivered no more than hourly.
+      </Text>
+    </Card>
+
     <Card style={{ backgroundColor: '#FFFCFA' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View>
@@ -248,7 +283,7 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
         <View style={{ flex: 1 }}><TextField label="Active calories" value={activeCaloriesInput} onChange={value => { setActiveCaloriesInput(value); setActivitySaved(false); }} placeholder="e.g. 320" keyboardType="decimal-pad" suffix="kcal" /></View>
       </View>
       <ActionButton label={activitySaved ? 'MOVEMENT STATS SAVED ✓' : 'SAVE DAILY MOVEMENT'} onPress={saveDailyMovement} tone="soft" />
-      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>Manual entry for now. You can copy these numbers from Apple Fitness. Automatic Apple Health step and active-energy sync is a future native integration.</Text>
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>{activity?.source === 'healthkit' ? 'Synced from Apple Health. You can still enter a manual correction above.' : 'Manual entry. Connect Apple Health above to import steps and active energy automatically.'}</Text>
     </Card>
 
     <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -563,8 +598,8 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
       {todays.length === 0 ? <EmptyState emoji="🧘‍♀️" title="No sessions logged yet" subtitle="Rest days count too. Add movement only when it happens." /> :
         todays.slice().reverse().map(item => <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#F4EEF3' }}>
           <View style={{ width: 40, height: 40, backgroundColor: C.lilac, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 11 }}><Text style={{ fontSize: 18 }}>{item.category === 'Strength' ? '🏋️' : item.category === 'Pilates' ? '🧘' : item.category === 'Run' ? '🏃' : item.category === 'Walk' ? '🚶' : '🌿'}</Text></View>
-          <View style={{ flex: 1 }}><Text style={{ color: C.text, fontWeight: '900', fontSize: 13 }}>{item.name}</Text><Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.category}</Text></View>
-          <Text style={{ color: C.text, fontWeight: '900' }}>{item.minutes} min</Text>
+          <View style={{ flex: 1 }}><Text style={{ color: C.text, fontWeight: '900', fontSize: 13 }}>{item.name}</Text><Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.category}{item.source === 'healthkit' ? ' · Apple Health' : ''}</Text></View>
+          <View style={{ alignItems: 'flex-end' }}><Text style={{ color: C.text, fontWeight: '900' }}>{item.minutes} min</Text>{item.activeCalories != null && <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>{item.activeCalories} kcal</Text>}</View>
           <TouchableOpacity onPress={() => removeWorkout(item.id)} style={{ marginLeft: 9, padding: 5 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>
         </View>)}
     </Card>
@@ -720,7 +755,7 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
         <View style={{ flex: 1 }}><TextField label="Sleep duration" value={sleep} onChange={setSleep} placeholder="e.g. 7.5" keyboardType="decimal-pad" suffix="hours" /></View>
         <View style={{ paddingBottom: 13 }}><ActionButton label="SAVE" onPress={addSleep} /></View>
       </View>
-      {lastSleep && <Text style={{ color: C.green, fontSize: 11, fontWeight: '800' }}>Latest: {lastSleep.hours} hours · {lastSleep.date}</Text>}
+      {lastSleep && <Text style={{ color: C.green, fontSize: 11, fontWeight: '800' }}>Latest: {lastSleep.hours} hours · {lastSleep.date}{lastSleep.source === 'healthkit' ? ' · Apple Health' : ''}</Text>}
     </Card>
     <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginBottom: 9 }}>Recent weigh-ins</Text>
     <Card>
@@ -755,6 +790,11 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<Tab>('today');
   const [saveFailed, setSaveFailed] = useState(false);
+  const [healthSyncing, setHealthSyncing] = useState(false);
+  const [healthSyncError, setHealthSyncError] = useState<string | null>(null);
+  const dataRef = useRef<FitlogData | null>(null);
+
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   useEffect(() => {
     let active = true;
@@ -778,6 +818,53 @@ export default function App() {
       .catch(() => setSaveFailed(true));
   }, [data, ready]);
 
+  useEffect(() => {
+    if (!ready) return;
+    const subscription = subscribeToAppleHealthUpdates(async () => {
+      const current = dataRef.current;
+      if (!current) return;
+      try {
+        const result = await syncAppleHealth(current, { requestAuthorization: false, reason: 'background' });
+        dataRef.current = result.data;
+        setData(result.data);
+        setHealthSyncError(result.summary.queryWarnings.length
+          ? 'Apple Health updated with some unavailable categories: ' + result.summary.queryWarnings.join(' · ')
+          : null);
+      } catch (error) {
+        setHealthSyncError(error instanceof Error ? error.message : 'Background Apple Health sync could not finish.');
+      }
+    });
+    return () => subscription?.remove();
+  }, [ready]);
+
+  const handleAppleHealthSync = async () => {
+    const current = dataRef.current;
+    if (!current) return;
+    setHealthSyncing(true);
+    setHealthSyncError(null);
+    try {
+      const result = await syncAppleHealth(current, {
+        requestAuthorization: true,
+        registerBackgroundDelivery: true,
+        reason: 'manual',
+      });
+      dataRef.current = result.data;
+      setData(result.data);
+      if (result.summary.queryWarnings.length > 0) {
+        setHealthSyncError('Apple Health was checked, but some categories could not be read: ' + result.summary.queryWarnings.join(' · '));
+      } else if (result.summary.steps === null && result.summary.activeCalories === null &&
+                 result.summary.workoutsImported === 0 && result.summary.sleepNightsImported === 0) {
+        setHealthSyncError('Apple Health was checked, but Fitlog did not receive shared samples. Check Health app → profile → Apps and Services → Fitlog, and allow the categories you want to share.');
+      } else {
+        setHealthSyncError(null);
+      }
+    } catch (error) {
+      setHealthSyncError(error instanceof Error ? error.message : 'Apple Health could not be connected. Please try again.');
+    } finally {
+      setHealthSyncing(false);
+    }
+  };
+
   const update: UpdateData = recipe => setData(current => current ? recipe(current) : current);
   const finishOnboarding = (profile: AssessmentInput) => {
     const result = assess(profile);
@@ -791,7 +878,7 @@ export default function App() {
       <StatusBar barStyle="dark-content" />
       {!data ? <Onboarding onComplete={(profile) => finishOnboarding(profile)} /> : <>
         <View style={{ flex: 1 }}>
-          {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} />}
+          {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} onSyncAppleHealth={handleAppleHealthSync} healthSyncing={healthSyncing} healthSyncError={healthSyncError} />}
           {tab === 'food' && <FoodScreen data={data} update={update} />}
           {tab === 'move' && <MoveScreen data={data} update={update} />}
           {tab === 'progress' && <ProgressScreen data={data} update={update} onReset={() => {
