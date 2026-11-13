@@ -6,13 +6,13 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 
 - Six-step onboarding and a provisional energy / macro assessment.
 - Today dashboard with daily calorie and macro totals, steps walked and active calories.
-- Read-only Apple Health integration for steps, active energy, workouts and sleep, including best-effort background delivery and a manual Sync Now action.
+- Read-only Apple Health integration for steps, active energy, workouts, sleep and recorded menstrual-flow history, including best-effort background delivery and a manual Sync Now action.
 - Searchable starter food catalogue (including common South Indian and Indian foods) with automatic portion-based calories, protein, carbs and fat estimates.
 - Multi-ingredient meal builder so a meal such as eggs + toast can be totalled together.
 - Optional manual nutrition fallback for foods and homemade recipes not yet in the catalogue.
 - Movement log for strength, Pilates, walking, running, cycling and mobility.
 - Water intake quick logging.
-- Progress check-ins for weight, bust, underbust, waist, lower abdomen, hips, glutes, left/right thighs, upper arms, forearms, calves, neck and sleep.
+- Progress check-ins for weight, bust, underbust, waist, lower abdomen, hips, glutes, left/right thighs, upper arms, forearms, calves, neck, sleep and Apple Health cycle history.
 - Measurement history saved as dated snapshots, with cm or inch input (stored consistently in cm).
 - Local persistence on the iPhone using AsyncStorage.
 - iOS-only Expo configuration.
@@ -48,7 +48,7 @@ Open the installed Fitlog development app and connect to the development server.
 
 ## Apple Health permissions and sync
 
-Fitlog requests read access only for steps, active energy, workouts and sleep. It does not write to Apple Health. iOS intentionally does not tell apps whether a read permission was granted; an empty result may mean no samples were shared or access was not allowed. Review access in the Health app under your profile and Apps and Services.
+Fitlog requests read access only for steps, active energy, workouts, sleep and menstrual-flow records. It does not write to Apple Health. The cycle view derives historical cycle starts from HealthKit's recorded start-of-cycle metadata and calculates averages only from actual recorded start dates; it does not produce period, ovulation or fertility predictions. iOS intentionally does not tell apps whether a read permission was granted; an empty result may mean no samples were shared or access was not allowed. Review access in the Health app under your profile and Apps and Services.
 
 Foreground sync is available from the Today dashboard. The app also registers best-effort HealthKit background delivery. iOS controls delivery timing; steps and active energy updates are generally delivered no more than hourly. Open Fitlog and use Sync Now when you need a fresh reading.
 
@@ -60,7 +60,7 @@ The current offline catalogue contains a small starter selection of common foods
 
 ## Data and privacy
 
-This MVP stores profile information and logs locally on the device using AsyncStorage. There is no account, cloud sync, external analytics or server API configured. App removal or clearing its data can delete local entries. AsyncStorage is not an encrypted health-data vault; do not store highly sensitive medical details in this prototype.
+This MVP stores profile information, logs and imported cycle history locally on the device using AsyncStorage. There is no account, cloud sync, external analytics or server API configured. App removal or clearing its data can delete local entries. AsyncStorage is not an encrypted health-data vault; do not store highly sensitive medical details in this prototype.
 
 ## Not implemented yet
 
