@@ -8,3 +8,5 @@ yarn-debug.log*
 .env
 .env.*
 !.env.example
+ios/
+android/
