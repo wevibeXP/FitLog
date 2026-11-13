@@ -6,7 +6,7 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 
 - Six-step onboarding and a provisional energy / macro assessment.
 - Today dashboard with daily calorie and macro totals, steps walked and active calories.
-- Daily steps and active-calorie entries can be copied from Apple Fitness and entered manually; automatic HealthKit sync is not connected yet.
+- Read-only Apple Health integration for steps, active energy, workouts and sleep, including best-effort background delivery and a manual Sync Now action.
 - Searchable starter food catalogue (including common South Indian and Indian foods) with automatic portion-based calories, protein, carbs and fat estimates.
 - Multi-ingredient meal builder so a meal such as eggs + toast can be totalled together.
 - Optional manual nutrition fallback for foods and homemade recipes not yet in the catalogue.
@@ -17,19 +17,42 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 - Local persistence on the iPhone using AsyncStorage.
 - iOS-only Expo configuration.
 
-## Run in Expo Go
+## Run the iOS development build
 
-Requirements: Node.js 22.13+ and the current Expo Go app on iOS.
+HealthKit is native iOS code and cannot run inside Expo Go. Fitlog uses an Expo development build.
+
+Requirements:
+- Node.js 22.13+
+- Expo account
+- Apple Developer Program membership for installing a cloud-built iOS app on a physical iPhone
+- HealthKit capability enabled for bundle identifier `com.wevibexp.fitlog`
+
+Install and validate:
 
 ```bash
 npm install
 npx expo install --fix
 npx expo-doctor@latest
 npx tsc --noEmit
-npx expo start --tunnel --clear
+npx eas-cli login
+npx eas-cli build --platform ios --profile development
 ```
 
-Scan the QR code with the iPhone camera and open it in Expo Go. Keep the Codespace running while testing.
+When EAS asks, allow it to configure iOS signing credentials for your Apple Developer account. Install the development build from the EAS build link on the iPhone. Then start Metro using:
+
+```bash
+npx expo start --dev-client --tunnel
+```
+
+Open the installed Fitlog development app and connect to the development server.
+
+## Apple Health permissions and sync
+
+Fitlog requests read access only for steps, active energy, workouts and sleep. It does not write to Apple Health. iOS intentionally does not tell apps whether a read permission was granted; an empty result may mean no samples were shared or access was not allowed. Review access in the Health app under your profile and Apps and Services.
+
+Foreground sync is available from the Today dashboard. The app also registers best-effort HealthKit background delivery. iOS controls delivery timing; steps and active energy updates are generally delivered no more than hourly. Open Fitlog and use Sync Now when you need a fresh reading.
+
+Health data is stored in this prototype's local app storage only; there is no Fitlog cloud upload or account sync. AsyncStorage is not encrypted health-data storage.
 
 ## Food estimate catalogue
 
@@ -42,7 +65,7 @@ This MVP stores profile information and logs locally on the device using AsyncSt
 ## Not implemented yet
 
 - AI food photo recognition and verified nutrition database lookup.
-- Apple Health / HealthKit permissions and imports.
+
 - Hevy integration.
 - Cloud account, backend sync, export / restore and multi-device support.
 - AI Coach Mode.
