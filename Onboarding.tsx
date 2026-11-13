@@ -14,7 +14,7 @@ const activities:{key:Activity;label:string;desc:string}[]=[
  {key:'moderate',label:'Moderately active',desc:'Exercise 3–5 days/week'},
  {key:'high',label:'Very active',desc:'Hard training 6–7 days/week or active work'},
  {key:'athlete',label:'Athlete-level',desc:'Very high training volume / physical job'}];
-const Field=({label,value,onChange,placeholder,unit}:{label:string;value:string;onChange:(s:string)=>void;placeholder:string;unit?:string})=><View style={{marginBottom:13}}><Text style={{color:C.muted,fontSize:12,fontWeight:'700',marginBottom:7}}>{label}{unit?\` (\${unit})\`:''}</Text><TextInput value={value} onChangeText={onChange} keyboardType="decimal-pad" placeholder={placeholder} placeholderTextColor="#66717D" style={{backgroundColor:C.panel2,borderColor:C.line,borderWidth:1,borderRadius:12,padding:13,color:C.text,fontSize:16}}/></View>;
+const Field=({label,value,onChange,placeholder,unit}:{label:string;value:string;onChange:(s:string)=>void;placeholder:string;unit?:string})=><View style={{marginBottom:13}}><Text style={{color:C.muted,fontSize:12,fontWeight:'700',marginBottom:7}}>{label}{unit?` (${unit})`:''}</Text><TextInput value={value} onChangeText={onChange} keyboardType="decimal-pad" placeholder={placeholder} placeholderTextColor="#66717D" style={{backgroundColor:C.panel2,borderColor:C.line,borderWidth:1,borderRadius:12,padding:13,color:C.text,fontSize:16}}/></View>;
 const Choice=({selected,label,desc,onPress}:{selected:boolean;label:string;desc?:string;onPress:()=>void})=><TouchableOpacity onPress={onPress} style={{backgroundColor:selected?'#263322':C.panel,borderWidth:1,borderColor:selected?C.accent:C.line,borderRadius:13,padding:13,marginBottom:9}}><Text style={{color:selected?C.accent:C.text,fontWeight:'800'}}>{label}</Text>{desc?<Text style={{color:C.muted,fontSize:12,marginTop:4}}>{desc}</Text>:null}</TouchableOpacity>;
 export default function Onboarding({onComplete}:Props){
  const [step,setStep]=useState(0);
@@ -76,8 +76,8 @@ export default function Onboarding({onComplete}:Props){
    {step===5&&result&&<>
     <View style={{backgroundColor:C.panel,borderRadius:16,padding:16,borderWidth:1,borderColor:C.line,marginBottom:12}}>
      <Text style={{color:C.muted,fontSize:12,fontWeight:'800'}}>ESTIMATED DAILY ENERGY NEEDS</Text>
-     <Text style={{color:C.text,fontSize:30,fontWeight:'900',marginTop:8}}>{result.tdee.low===result.tdee.high?result.tdee.central:\`\${result.tdee.low}–\${result.tdee.high}\`} <Text style={{fontSize:13,color:C.muted}}>kcal TDEE</Text></Text>
-     <Text style={{color:C.muted,fontSize:12,marginTop:5}}>BMR estimate: {result.bmr.low===result.bmr.high?result.bmr.low:\`\${result.bmr.low}–\${result.bmr.high}\`} kcal/day</Text>
+     <Text style={{color:C.text,fontSize:30,fontWeight:'900',marginTop:8}}>{result.tdee.low===result.tdee.high?result.tdee.central:`${result.tdee.low}–${result.tdee.high}`} <Text style={{fontSize:13,color:C.muted}}>kcal TDEE</Text></Text>
+     <Text style={{color:C.muted,fontSize:12,marginTop:5}}>BMR estimate: {result.bmr.low===result.bmr.high?result.bmr.low:`${result.bmr.low}–${result.bmr.high}`} kcal/day</Text>
      <View style={{height:1,backgroundColor:C.line,marginVertical:14}}/>
      {result.needsReview?<Text style={{color:'#FFD29A',fontSize:16,fontWeight:'900',marginTop:12}}>Calorie and macro targets withheld pending professional review</Text>:<>
       <Text style={{color:C.accent,fontSize:27,fontWeight:'900',marginTop:12}}>{result.targetCalories} kcal/day</Text>
