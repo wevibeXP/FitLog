@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StatusBar,
+  StyleProp,
+  ViewStyle,
   Text,
   TextInput,
   TouchableOpacity,
@@ -43,7 +43,7 @@ const C = {
 type Tab = 'today' | 'food' | 'move' | 'progress';
 type UpdateData = (recipe: (current: FitlogData) => FitlogData) => void;
 
-function Card({ children, style }: { children: React.ReactNode; style?: object }) {
+function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   return <View style={[{ backgroundColor: C.panel, borderRadius: 23, borderWidth: 1, borderColor: C.line, padding: 18, marginBottom: 14, shadowColor: '#7D688D', shadowOpacity: 0.045, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 1 }, style]}>{children}</View>;
 }
 
@@ -498,7 +498,7 @@ export default function App() {
 
   if (!ready) return <SafeAreaProvider><SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}><LoadingScreen /></SafeAreaView></SafeAreaProvider>;
   return <SafeAreaProvider>
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle="dark-content" />
       {!data ? <Onboarding onComplete={(profile) => finishOnboarding(profile)} /> : <>
         <View style={{ flex: 1 }}>
