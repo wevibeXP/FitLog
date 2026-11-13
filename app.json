@@ -5,10 +5,9 @@
     "version": "0.3.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "platforms": ["ios"],
-    "splash": {
-      "backgroundColor": "#FFF9F4"
-    },
+    "platforms": [
+      "ios"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.wevibexp.fitlog",
