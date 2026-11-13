@@ -362,7 +362,7 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
   </ScrollView>;
 }
 
-function ProgressScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
+function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: UpdateData; onReset: () => void }) {
   const [weight, setWeight] = useState('');
   const [waist, setWaist] = useState('');
   const [hips, setHips] = useState('');
@@ -416,7 +416,7 @@ function ProgressScreen({ data, update }: { data: FitlogData; update: UpdateData
           <Text style={{ color: C.text, fontSize: 30, fontWeight: '900' }}>{latest ? latest.kg.toFixed(1) : '—'} <Text style={{ color: C.muted, fontSize: 12 }}>kg</Text></Text>
           <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{latest ? 'Latest entry · ' + latest.date : 'No weigh-in yet'}</Text>
         </View>
-        {previous && <View style={{ alignItems: 'flex-end' }}><Text style={{ color: C.accent, fontSize: 16, fontWeight: '900' }}>{(latest.kg - previous.kg) > 0 ? '+' : ''}{(latest.kg - previous.kg).toFixed(1)} kg</Text><Text style={{ color: C.muted, fontSize: 10 }}>vs previous entry</Text></View>}
+        {latest && previous && <View style={{ alignItems: 'flex-end' }}><Text style={{ color: C.accent, fontSize: 16, fontWeight: '900' }}>{(latest.kg - previous.kg) > 0 ? '+' : ''}{(latest.kg - previous.kg).toFixed(1)} kg</Text><Text style={{ color: C.muted, fontSize: 10 }}>vs previous entry</Text></View>}
       </View>
       <View style={{ height: 1, backgroundColor: '#E3D9F0', marginVertical: 15 }} />
       <Text style={{ color: C.muted, fontSize: 11 }}>Goal weight · {data.profile.goalWeightKg.toFixed(1)} kg</Text>
@@ -451,6 +451,16 @@ function ProgressScreen({ data, update }: { data: FitlogData; update: UpdateData
         </View>)}
     </Card>
     <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, textAlign: 'center' }}>Weight naturally fluctuates with hydration, digestion, training and your cycle. Look at longer trends, not single readings.</Text>
+    <Card style={{ backgroundColor: '#FFFCFA' }}>
+      <Text style={{ color: C.text, fontWeight: '900' }}>Your data, your call 🔐</Text>
+      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 18, marginTop: 6 }}>This prototype stores entries locally on this iPhone. There is no Fitlog cloud account or sync yet.</Text>
+      <TouchableOpacity onPress={() => Alert.alert('Reset Fitlog on this iPhone?', 'This deletes your local profile, food diary, workouts and check-ins from this app. This cannot be undone.', [
+        { text: 'Keep my data', style: 'cancel' },
+        { text: 'Delete local data', style: 'destructive', onPress: onReset },
+      ])} style={{ alignSelf: 'flex-start', paddingVertical: 10, marginTop: 5 }}>
+        <Text style={{ color: '#B27D87', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }}>RESET LOCAL APP DATA</Text>
+      </TouchableOpacity>
+    </Card>
   </ScrollView>;
 }
 
@@ -505,7 +515,11 @@ export default function App() {
           {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} />}
           {tab === 'food' && <FoodScreen data={data} update={update} />}
           {tab === 'move' && <MoveScreen data={data} update={update} />}
-          {tab === 'progress' && <ProgressScreen data={data} update={update} />}
+          {tab === 'progress' && <ProgressScreen data={data} update={update} onReset={() => {
+            AsyncStorage.removeItem(STORAGE_KEY)
+              .then(() => { setData(null); setTab('today'); })
+              .catch(() => Alert.alert('Could not reset', 'Please try again after checking your device storage.'));
+          }} />}
           {saveFailed && <Text style={{ color: '#A45F60', fontSize: 10, textAlign: 'center', paddingVertical: 4 }}>Could not save changes to this iPhone. Check available storage.</Text>}
         </View>
         <TabBar selected={tab} onSelect={setTab} />
