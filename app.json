@@ -2,10 +2,13 @@
   "expo": {
     "name": "Fitlog",
     "slug": "fitlog",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "platforms": ["ios"],
+    "splash": {
+      "backgroundColor": "#FFF9F4"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.wevibexp.fitlog",
