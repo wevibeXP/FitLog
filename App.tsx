@@ -2,28 +2,51 @@ import React,{useState} from 'react';
 import {SafeAreaView,StatusBar,Text,View,TouchableOpacity,ScrollView} from 'react-native';
 import Onboarding from './Onboarding';
 import {AssessmentInput,assess} from './assessment';
-const C={bg:'#0B0D10',panel:'#15191F',text:'#F4F6F8',muted:'#98A2AE',accent:'#B8F36B',line:'#2A333D'};
+
+const C={
+ bg:'#FFF9F4',panel:'#FFFFFF',text:'#393340',muted:'#897F8D',
+ accent:'#9A83D4',line:'#EAE1EB',mint:'#E2F1E8',peach:'#FBE8DF'
+};
+
 export default function App(){
  const [profile,setProfile]=useState<AssessmentInput|null>(null);
  const [result,setResult]=useState<ReturnType<typeof assess>|null>(null);
  return <SafeAreaView style={{flex:1,backgroundColor:C.bg}}>
-  <StatusBar barStyle="light-content"/>
+  <StatusBar barStyle="dark-content"/>
   {!profile||!result?<Onboarding onComplete={(p,r)=>{setProfile(p);setResult(r)}}/>:
-   <ScrollView contentContainerStyle={{padding:22,paddingBottom:40}}>
-    <Text style={{color:C.accent,fontWeight:'900',letterSpacing:2,fontSize:12}}>FITLOG · YOUR BASELINE</Text>
-    <Text style={{color:C.text,fontSize:30,fontWeight:'900',marginTop:12}}>Assessment saved.</Text>
-    <Text style={{color:C.muted,lineHeight:21,marginTop:8}}>Your initial profile is ready. Next we'll connect food logging, workouts, Apple Health and your Coach Mode.</Text>
-    <View style={{backgroundColor:C.panel,borderRadius:18,borderWidth:1,borderColor:C.line,padding:17,marginTop:24}}>
-     <Text style={{color:C.muted,fontSize:12,fontWeight:'800'}}>PROVISIONAL DAILY TARGET</Text>
-     {result.targetCalories===null?<Text style={{color:'#FFD29A',fontWeight:'800',marginTop:12}}>Targets withheld pending professional review.</Text>:<>
-      <Text style={{color:C.accent,fontSize:36,fontWeight:'900',marginTop:8}}>{result.targetCalories} kcal</Text>
-      <Text style={{color:C.text,marginTop:14}}>Protein · {result.macros?.proteinG}g</Text>
-      <Text style={{color:C.text,marginTop:7}}>Carbohydrates · {result.macros?.carbsG}g</Text>
-      <Text style={{color:C.text,marginTop:7}}>Fat · {result.macros?.fatG}g</Text>
+   <ScrollView contentContainerStyle={{padding:24,paddingBottom:44}}>
+    <View style={{alignSelf:'flex-start',backgroundColor:C.mint,paddingHorizontal:13,paddingVertical:8,borderRadius:30}}>
+     <Text style={{color:'#547A66',fontWeight:'800',letterSpacing:2,fontSize:10}}>FITLOG  ·  YOUR BASELINE</Text>
+    </View>
+    <Text style={{color:C.text,fontSize:32,fontWeight:'900',letterSpacing:0.2,marginTop:22}}>Look at you, getting started ✨</Text>
+    <Text style={{color:C.muted,lineHeight:23,letterSpacing:0.1,marginTop:9}}>Your first Fitlog assessment is ready. This is a starting point we can refine as you log meals, movement and recovery.</Text>
+    <View style={{backgroundColor:C.panel,borderRadius:25,borderWidth:1,borderColor:C.line,padding:21,marginTop:25,shadowColor:'#7D688D',shadowOpacity:0.07,shadowRadius:16,shadowOffset:{width:0,height:7},elevation:2}}>
+     <Text style={{color:C.muted,fontSize:11,fontWeight:'800',letterSpacing:1.8}}>YOUR DAILY STARTING POINT</Text>
+     {result.targetCalories===null?<View style={{backgroundColor:C.peach,borderRadius:16,padding:15,marginTop:16}}>
+       <Text style={{color:'#8D5B48',fontWeight:'800',lineHeight:21}}>Your calorie and macro targets are on pause while you get the right professional guidance.</Text>
+      </View>:<>
+      <Text style={{color:C.accent,fontSize:42,fontWeight:'900',letterSpacing:-1,marginTop:10}}>{result.targetCalories} <Text style={{fontSize:16,fontWeight:'700',letterSpacing:0}}>kcal / day</Text></Text>
+      <View style={{height:1,backgroundColor:C.line,marginVertical:17}}/>
+      <View style={{flexDirection:'row',gap:8}}>
+       <View style={{flex:1,backgroundColor:'#F0EAFB',borderRadius:16,padding:12}}>
+        <Text style={{color:'#7864AC',fontSize:10,fontWeight:'800',letterSpacing:1}}>PROTEIN</Text>
+        <Text style={{color:C.text,fontWeight:'900',fontSize:20,marginTop:5}}>{result.macros?.proteinG}g</Text>
+       </View>
+       <View style={{flex:1,backgroundColor:C.mint,borderRadius:16,padding:12}}>
+        <Text style={{color:'#547A66',fontSize:10,fontWeight:'800',letterSpacing:1}}>CARBS</Text>
+        <Text style={{color:C.text,fontWeight:'900',fontSize:20,marginTop:5}}>{result.macros?.carbsG}g</Text>
+       </View>
+       <View style={{flex:1,backgroundColor:C.peach,borderRadius:16,padding:12}}>
+        <Text style={{color:'#9C6955',fontSize:10,fontWeight:'800',letterSpacing:1}}>FAT</Text>
+        <Text style={{color:C.text,fontWeight:'900',fontSize:20,marginTop:5}}>{result.macros?.fatG}g</Text>
+       </View>
+      </View>
      </>}
     </View>
-    <TouchableOpacity onPress={()=>{setProfile(null);setResult(null)}} style={{padding:15,borderRadius:12,borderWidth:1,borderColor:C.line,marginTop:18,alignItems:'center'}}><Text style={{color:C.text,fontWeight:'800'}}>Edit assessment</Text></TouchableOpacity>
-    <Text style={{color:C.muted,fontSize:11,lineHeight:18,marginTop:18}}>Prototype note: this profile is held in app memory only and resets on reload. Persistent storage, authentication and HealthKit permissions are not yet connected.</Text>
+    <TouchableOpacity onPress={()=>{setProfile(null);setResult(null)}} style={{padding:17,borderRadius:18,backgroundColor:C.accent,marginTop:19,alignItems:'center',shadowColor:C.accent,shadowOpacity:0.2,shadowRadius:10,shadowOffset:{width:0,height:5},elevation:2}}>
+     <Text style={{color:'#FFFFFF',fontWeight:'900',letterSpacing:1}}>EDIT MY ASSESSMENT</Text>
+    </TouchableOpacity>
+    <Text style={{color:C.muted,fontSize:11,lineHeight:18,marginTop:20,letterSpacing:0.1}}>Little prototype note: this profile is currently held in app memory and resets when the app reloads. Saving, accounts and Apple Health are coming in later milestones.</Text>
    </ScrollView>}
  </SafeAreaView>;
 }
