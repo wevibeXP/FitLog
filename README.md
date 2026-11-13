@@ -6,7 +6,9 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 
 - Six-step onboarding and a provisional energy / macro assessment.
 - Today dashboard with daily calorie and macro totals.
-- Manual food diary with meal type, calories, protein, carbs and fat.
+- Searchable starter food catalogue (including common South Indian and Indian foods) with automatic portion-based calories, protein, carbs and fat estimates.
+- Multi-ingredient meal builder so a meal such as eggs + toast can be totalled together.
+- Optional manual nutrition fallback for foods and homemade recipes not yet in the catalogue.
 - Movement log for strength, Pilates, walking, running, cycling and mobility.
 - Water intake quick logging.
 - Progress check-ins for weight, waist, hips and sleep.
@@ -26,6 +28,10 @@ npx expo start --tunnel --clear
 ```
 
 Scan the QR code with the iPhone camera and open it in Expo Go. Keep the Codespace running while testing.
+
+## Food estimate catalogue
+
+The current offline catalogue contains a small starter selection of common foods. Values are indicative estimates per 100 g with suggested household portions; actual nutrition varies with recipe, oil, brand, cooking method and serving size. This is not a complete import of the official Indian Food Composition Tables. The National Institute of Nutrition / ICMR publishes the [Indian Food Composition Tables](https://www.nin.res.in/ebooks/IFCT2017.pdf), which are a reference for future expansion. Users should check package labels or weigh portions when more precision is needed.
 
 ## Data and privacy
 
