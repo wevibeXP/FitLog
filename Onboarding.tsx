@@ -14,8 +14,24 @@ const activities:{key:Activity;label:string;desc:string}[]=[
  {key:'moderate',label:'Moderately active',desc:'Exercise 3–5 days/week'},
  {key:'high',label:'Very active',desc:'Hard training 6–7 days/week or active work'},
  {key:'athlete',label:'Athlete-level',desc:'Very high training volume / physical job'}];
-undefined
-undefined
+const Field=({label,value,onChange,placeholder,unit}:{label:string;value:string;onChange:(s:string)=>void;placeholder:string;unit?:string})=>
+ <View style={{marginBottom:15}}>
+  <Text style={{color:C.muted,fontSize:11,fontWeight:'800',letterSpacing:0.8,marginBottom:8}}>{label}{unit?'  ·  '+unit:''}</Text>
+  <TextInput value={value} onChangeText={onChange} keyboardType="decimal-pad" placeholder={placeholder} placeholderTextColor="#A99EAC" selectionColor={C.accent} style={{backgroundColor:C.panel,borderColor:C.line,borderWidth:1,borderRadius:17,paddingHorizontal:16,paddingVertical:15,color:C.text,fontSize:16,fontWeight:'600'}}/>
+ </View>;
+const Choice=({selected,label,desc,onPress}:{selected:boolean;label:string;desc?:string;onPress:()=>void})=>
+ <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={{backgroundColor:selected?'#F0EAF9':C.panel,borderWidth:selected?1.5:1,borderColor:selected?C.accent:C.line,borderRadius:18,padding:16,marginBottom:10,shadowColor:'#78658B',shadowOpacity:selected?0.07:0.025,shadowRadius:8,shadowOffset:{width:0,height:3},elevation:selected?1:0}}>
+  <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
+   <Text style={{color:C.text,fontWeight:'800',fontSize:14,letterSpacing:0.1,flex:1}}>{label}</Text>
+   <View style={{width:19,height:19,borderRadius:10,borderWidth:1.5,borderColor:selected?C.accent:'#D9CEDD',backgroundColor:selected?C.accent:'transparent',alignItems:'center',justifyContent:'center',marginLeft:10}}>{selected?<Text style={{color:'#FFFFFF',fontSize:11,fontWeight:'900'}}>✓</Text>:null}</View>
+  </View>
+  {desc?<Text style={{color:C.muted,fontSize:12,lineHeight:18,marginTop:6}}>{desc}</Text>:null}
+ </TouchableOpacity>;
+const btn=(label:string,fn:()=>void,disabled=false)=>
+ <TouchableOpacity activeOpacity={0.85} disabled={disabled} onPress={fn} style={{backgroundColor:disabled?'#EDE7EF':C.accent,paddingVertical:17,paddingHorizontal:18,borderRadius:18,alignItems:'center',marginTop:7,shadowColor:C.accent,shadowOpacity:disabled?0:0.22,shadowRadius:10,shadowOffset:{width:0,height:5},elevation:disabled?0:2}}>
+  <Text style={{color:disabled?'#A99EAC':'#FFFFFF',fontWeight:'900',letterSpacing:1.1}}>{label}</Text>
+ </TouchableOpacity>;
+
 export default function Onboarding({onComplete}:Props){
  const [step,setStep]=useState(0);
  const [age,setAge]=useState('');const [height,setHeight]=useState('');const [weight,setWeight]=useState('');const [goalWeight,setGoalWeight]=useState('');const [days,setDays]=useState('90');
