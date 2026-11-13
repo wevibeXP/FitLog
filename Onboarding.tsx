@@ -47,7 +47,7 @@ export default function Onboarding({onComplete}:Props){
    step===1?Number(goalWeight)>0&&Number(days)>0:step===4?consent:true;
  const next=()=>{if(step<5)setStep(step+1);else if(result)onComplete(data,result)};
  const back=()=>setStep(Math.max(0,step-1));
- undefined
+ const btnLabel=step===5?'SAVE MY STARTING POINT ✨':'CONTINUE';
  return <View style={{flex:1,backgroundColor:C.bg}}>
   <ScrollView contentContainerStyle={{paddingHorizontal:23,paddingTop:18,paddingBottom:42}}>
    <View style={{alignSelf:'flex-start',backgroundColor:C.mint,paddingHorizontal:14,paddingVertical:9,borderRadius:30}}><Text style={{color:'#547A66',fontWeight:'900',letterSpacing:2.5,fontSize:10}}>F I T L O G  ✳  PERSONAL RESET</Text></View>
@@ -112,7 +112,7 @@ export default function Onboarding({onComplete}:Props){
    </>}
    <View style={{flexDirection:'row',gap:11,marginTop:22}}>
     {step>0?<TouchableOpacity onPress={back} style={{padding:16,borderRadius:18,borderWidth:1,borderColor:C.line,backgroundColor:C.panel,flex:1,alignItems:'center'}}><Text style={{color:C.text,fontWeight:'800',letterSpacing:0.5}}>BACK</Text></TouchableOpacity>:null}
-    <View style={{flex:2}}>{btn(step===5?'Accept assessment & continue':'Continue',next,!canNext|| (step===5&&!result))}</View>
+    <View style={{flex:2}}>{btn(btnLabel,next,!canNext|| (step===5&&!result))}</View>
    </View>
    {step===0&&<Text style={{color:C.muted,fontSize:11,lineHeight:18,marginTop:14,letterSpacing:0.1}}>For adults and teens: under-18 users can complete the profile, but Fitlog will withhold calorie and macro prescriptions and require a clinician-supported pathway.</Text>}
   </ScrollView>
