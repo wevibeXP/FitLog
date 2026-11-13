@@ -1,12 +1,15 @@
 {
-  "expo":{
-    "name":"Fitlog",
-    "slug":"fitlog",
-    "version":"1.1.0",
-    "orientation":"portrait",
-    "userInterfaceStyle":"dark",
-    "splash":{"backgroundColor":"#0B0D10"},
-    "ios":{"supportsTablet":true},
-    "android":{"adaptiveIcon":{"backgroundColor":"#0B0D10"}}
+  "expo": {
+    "name": "Fitlog",
+    "slug": "fitlog",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "platforms": ["ios"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.wevibexp.fitlog",
+      "buildNumber": "1"
+    }
   }
 }
