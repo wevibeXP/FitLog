@@ -24,10 +24,20 @@ export type WorkoutEntry = {
   category: string;
   minutes: number;
   createdAt: number;
+  source?: 'manual' | 'healthkit';
+  healthKitId?: string;
+  healthKitActivityType?: number;
+  activeCalories?: number;
 };
 
 export type WeightEntry = { id: string; date: string; kg: number };
-export type SleepEntry = { id: string; date: string; hours: number };
+export type SleepEntry = {
+  id: string;
+  date: string;
+  hours: number;
+  source?: 'manual' | 'healthkit';
+  healthKitSampleIds?: string[];
+};
 export type MeasurementEntry = {
   id: string;
   date: string;
@@ -66,6 +76,12 @@ export type FitlogData = {
   measurements: MeasurementEntry[];
   waterByDate: Record<string, number>;
   activityByDate?: Record<string, DailyActivityEntry>;
+  healthSync?: {
+    setupRequested: boolean;
+    lastSyncAt?: number;
+    lastSyncReason?: 'manual' | 'background';
+    backgroundDeliveryEnabled?: boolean;
+  };
 };
 
 export const STORAGE_KEY = '@fitlog/data/v1';
