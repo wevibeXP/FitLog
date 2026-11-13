@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Onboarding from './Onboarding';
 import { assess, AssessmentInput } from './assessment';
+import { estimateFood, searchFoods, suggestAmount, NutritionFood, NutritionUnit, FoodEstimate } from './nutrition';
 import {
   createInitialData,
   FitlogData,
@@ -230,62 +231,175 @@ function FoodRow({ item }: { item: FoodEntry }) {
     <View style={{ flex: 1 }}>
       <Text style={{ color: C.text, fontWeight: '800', fontSize: 13 }}>{item.name}</Text>
       <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.meal} · P {item.protein}g · C {item.carbs}g · F {item.fat}g</Text>
+      <Text style={{ color: C.muted, fontSize: 9, marginTop: 2 }}>{item.estimateMethod === 'catalogue' ? 'Calculated from food catalogue' : item.estimateMethod === 'manual' ? 'Manual estimate' : 'Saved entry'}</Text>
     </View>
     <Text style={{ color: C.text, fontWeight: '900', fontSize: 13 }}>{item.calories} kcal</Text>
   </View>;
 }
 
+type DraftFood = { food: NutritionFood; amount: number; unit: NutritionUnit; estimate: FoodEstimate };
+
 function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
-  const [name, setName] = useState('');
+  const [query, setQuery] = useState('');
   const [meal, setMeal] = useState<MealType>('Breakfast');
-  const [calories, setCalories] = useState('');
-  const [protein, setProtein] = useState('');
-  const [carbs, setCarbs] = useState('');
-  const [fat, setFat] = useState('');
+  const [selectedFood, setSelectedFood] = useState<NutritionFood | null>(null);
+  const [amount, setAmount] = useState('1');
+  const [unit, setUnit] = useState<NutritionUnit>('serving');
+  const [draft, setDraft] = useState<DraftFood[]>([]);
   const date = localDateKey();
   const todaysFood = data.food.filter(item => item.date === date);
-  const totals = todaysFood.reduce((sum, item) => ({ kcal: sum.kcal + item.calories, p: sum.p + item.protein, c: sum.c + item.carbs, f: sum.f + item.fat }), { kcal: 0, p: 0, c: 0, f: 0 });
-  const addFood = () => {
-    const kcal = Number(calories);
-    if (!name.trim() || !Number.isFinite(kcal) || kcal <= 0) {
-      Alert.alert('A tiny bit more info', 'Add a food name and calories greater than zero.');
+  const totals = todaysFood.reduce((sum, item) => ({
+    kcal: sum.kcal + item.calories,
+    p: sum.p + item.protein,
+    c: sum.c + item.carbs,
+    f: sum.f + item.fat,
+  }), { kcal: 0, p: 0, c: 0, f: 0 });
+  const suggestions = useMemo(() => searchFoods(query), [query]);
+  const quantity = Number(amount);
+  const selectedEstimate = selectedFood && Number.isFinite(quantity) && quantity > 0
+    ? estimateFood(selectedFood, quantity, unit)
+    : null;
+  const draftTotals = draft.reduce((sum, item) => ({
+    kcal: sum.kcal + item.estimate.calories,
+    p: sum.p + item.estimate.protein,
+    c: sum.c + item.estimate.carbs,
+    f: sum.f + item.estimate.fat,
+  }), { kcal: 0, p: 0, c: 0, f: 0 });
+
+  const chooseFood = (food: NutritionFood) => {
+    const suggested = suggestAmount(query, food);
+    setSelectedFood(food);
+    setAmount(String(suggested.amount));
+    setUnit(suggested.unit);
+  };
+
+  const addIngredient = () => {
+    if (!selectedFood || !selectedEstimate) {
+      Alert.alert('Choose a food and portion', 'Select a food and enter a portion greater than zero.');
       return;
     }
-    const item: FoodEntry = { id: makeId(), date, name: name.trim(), meal, calories: kcal, protein: Number(protein) || 0, carbs: Number(carbs) || 0, fat: Number(fat) || 0, createdAt: Date.now() };
-    update(current => ({ ...current, food: [...current.food, item] }));
-    setName(''); setCalories(''); setProtein(''); setCarbs(''); setFat('');
+    setDraft(current => [...current, {
+      food: selectedFood,
+      amount: quantity,
+      unit,
+      estimate: selectedEstimate,
+    }]);
+    setSelectedFood(null);
+    setQuery('');
+    setAmount('1');
+    setUnit('serving');
   };
+
+  const saveMeal = () => {
+    if (draft.length === 0) {
+      Alert.alert('Your meal is empty', 'Search for a food and add it to your meal first.');
+      return;
+    }
+    const entry: FoodEntry = {
+      id: makeId(),
+      date,
+      name: draft.map(item => item.food.name).join(' + '),
+      meal,
+      calories: draftTotals.kcal,
+      protein: Math.round(draftTotals.p * 10) / 10,
+      carbs: Math.round(draftTotals.c * 10) / 10,
+      fat: Math.round(draftTotals.f * 10) / 10,
+      createdAt: Date.now(),
+      estimateMethod: 'catalogue',
+      ingredients: draft.map(item => ({
+        foodId: item.food.id,
+        name: item.food.name,
+        grams: item.estimate.grams,
+      })),
+    };
+    update(current => ({ ...current, food: [...current.food, entry] }));
+    setDraft([]);
+    setSelectedFood(null);
+    setQuery('');
+    Alert.alert('Meal saved 🌷', 'Fitlog added the estimated calories and macros to today’s diary.');
+  };
+
   const removeFood = (id: string) => Alert.alert('Remove this entry?', 'This only removes the selected food log.', [
     { text: 'Keep it', style: 'cancel' },
     { text: 'Remove', style: 'destructive', onPress: () => update(current => ({ ...current, food: current.food.filter(item => item.id !== id) })) },
   ]);
 
-  return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
-    <PageTitle eyebrow="FOOD JOURNAL  ✳  ONE BITE AT A TIME" title="Nourish yourself 🍓" subtitle="Log what you eat without making food a maths exam. Manual entries are saved on this iPhone." />
+  return <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
+    <PageTitle eyebrow="FOOD JOURNAL  ✳  ONE BITE AT A TIME" title="Nourish yourself 🍓" subtitle="Search a food, choose the portion and Fitlog calculates the estimated nutrition for you." />
     <Card style={{ backgroundColor: C.lilac }}>
       <Eyebrow>TODAY'S TOTAL</Eyebrow>
       <Text style={{ color: C.text, fontSize: 31, fontWeight: '900', marginTop: 8 }}>{Math.round(totals.kcal)} <Text style={{ fontSize: 13, color: C.muted }}>kcal logged</Text></Text>
       <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Protein {Math.round(totals.p)}g  ·  Carbs {Math.round(totals.c)}g  ·  Fat {Math.round(totals.f)}g</Text>
     </Card>
     <Card>
-      <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 15 }}>Add a food ✨</Text>
-      <Text style={{ color: C.muted, fontSize: 11, fontWeight: '800', marginBottom: 9 }}>MEAL</Text>
+      <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 14 }}>Build your meal ✨</Text>
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 9 }}>WHAT ARE YOU LOGGING?</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
         {(['Breakfast', 'Lunch', 'Dinner', 'Snack'] as MealType[]).map(option => <Chip key={option} label={option} selected={meal === option} onPress={() => setMeal(option)} />)}
       </View>
-      <TextField label="Food or dish" value={name} onChange={setName} placeholder="e.g. 2 eggs and toast" />
-      <TextField label="Calories" value={calories} onChange={setCalories} placeholder="e.g. 320" keyboardType="decimal-pad" suffix="kcal" />
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <View style={{ flex: 1 }}><TextField label="Protein" value={protein} onChange={setProtein} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
-        <View style={{ flex: 1 }}><TextField label="Carbs" value={carbs} onChange={setCarbs} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
-        <View style={{ flex: 1 }}><TextField label="Fat" value={fat} onChange={setFat} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
-      </View>
-      <ActionButton label="SAVE FOOD ENTRY  + " onPress={addFood} />
-      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 10 }}>Nutrition values are estimates. You can use package labels or a trusted nutrition source for more accurate entries.</Text>
+
+      <TextField label="Search food or dish" value={query} onChange={value => { setQuery(value); setSelectedFood(null); }} placeholder="e.g. 2 eggs, idli, cooked rice" />
+      {!selectedFood && <View style={{ marginTop: 1, marginBottom: 10 }}>
+        <Text style={{ color: C.muted, fontSize: 10, fontWeight: '800', marginBottom: 8 }}>{query.trim() ? 'MATCHING FOODS' : 'POPULAR STARTERS'}</Text>
+        {suggestions.length === 0 ? <View style={{ padding: 13, borderRadius: 14, backgroundColor: '#FFFCFA' }}>
+          <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18 }}>No match in the starter catalogue yet. Try a simpler food name or add the ingredients separately.</Text>
+        </View> : suggestions.slice(0, 6).map(food => <TouchableOpacity key={food.id} onPress={() => chooseFood(food)} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, borderColor: C.line, backgroundColor: '#FFFCFA', marginBottom: 7 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.text, fontSize: 13, fontWeight: '900' }}>{food.name}</Text>
+            <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{food.category} · {food.servingLabel}</Text>
+          </View>
+          <Text style={{ color: C.accent, fontWeight: '900', fontSize: 12 }}>{Math.round(food.kcal * food.servingGrams / 100)} kcal</Text>
+          <Text style={{ color: C.accent, fontSize: 20, marginLeft: 10 }}>＋</Text>
+        </TouchableOpacity>)}
+      </View>}
+
+      {selectedFood && <View style={{ backgroundColor: '#F7F2FC', borderWidth: 1, borderColor: '#E4D9F2', borderRadius: 18, padding: 15, marginTop: 4, marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.text, fontWeight: '900', fontSize: 15 }}>{selectedFood.name}</Text>
+            <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{selectedFood.category} · estimated values</Text>
+          </View>
+          <TouchableOpacity onPress={() => setSelectedFood(null)}><Text style={{ color: C.accent, fontWeight: '900', padding: 6 }}>CHANGE</Text></TouchableOpacity>
+        </View>
+        <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.2, marginTop: 16, marginBottom: 8 }}>PORTION SIZE</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 9 }}>
+          <Chip label={selectedFood.servingLabel} selected={unit === 'serving'} onPress={() => setUnit('serving')} />
+          <Chip label="Grams" selected={unit === 'g'} onPress={() => setUnit('g')} />
+        </View>
+        <TextField label={unit === 'serving' ? 'Number of servings' : 'Weight'} value={amount} onChange={setAmount} placeholder="1" keyboardType="decimal-pad" suffix={unit === 'serving' ? 'servings' : 'g'} />
+        {selectedEstimate && <View style={{ backgroundColor: '#FFFFFF', borderRadius: 14, padding: 13, marginTop: 1 }}>
+          <Text style={{ color: C.accent, fontSize: 24, fontWeight: '900' }}>{selectedEstimate.calories} kcal</Text>
+          <Text style={{ color: C.muted, fontSize: 11, marginTop: 5 }}>{selectedEstimate.grams} g  ·  Protein {selectedEstimate.protein}g  ·  Carbs {selectedEstimate.carbs}g  ·  Fat {selectedEstimate.fat}g</Text>
+        </View>}
+        <View style={{ marginTop: 12 }}><ActionButton label="ADD THIS FOOD TO MEAL  +" onPress={addIngredient} disabled={!selectedEstimate} /></View>
+      </View>}
+
+      {draft.length > 0 && <View style={{ backgroundColor: '#FFFCFA', borderRadius: 17, padding: 14, marginTop: 5 }}>
+        <Text style={{ color: C.text, fontSize: 13, fontWeight: '900', marginBottom: 8 }}>In this meal · {draft.length} item{draft.length === 1 ? '' : 's'}</Text>
+        {draft.map((item, index) => <View key={item.food.id + '-' + index} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.line }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.text, fontWeight: '800', fontSize: 12 }}>{item.food.name}</Text>
+            <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.estimate.grams} g · {item.estimate.calories} kcal</Text>
+          </View>
+          <Text style={{ color: C.text, fontSize: 11, fontWeight: '900' }}>{item.estimate.protein}g P</Text>
+          <TouchableOpacity onPress={() => setDraft(current => current.filter((_, i) => i !== index))} style={{ marginLeft: 12, padding: 5 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>
+        </View>)}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 13 }}>
+          <View>
+            <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>MEAL ESTIMATE</Text>
+            <Text style={{ color: C.text, fontSize: 22, fontWeight: '900', marginTop: 3 }}>{draftTotals.kcal} kcal</Text>
+            <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>P {draftTotals.p.toFixed(1)}g · C {draftTotals.c.toFixed(1)}g · F {draftTotals.f.toFixed(1)}g</Text>
+          </View>
+          <TouchableOpacity onPress={() => setDraft([])}><Text style={{ color: '#B27D87', fontSize: 10, fontWeight: '900' }}>CLEAR</Text></TouchableOpacity>
+        </View>
+        <View style={{ marginTop: 13 }}><ActionButton label="SAVE MEAL TO DIARY  ✓" onPress={saveMeal} /></View>
+      </View>}
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 14 }}>Estimates use typical values per 100 g and standard household portions. Oil, recipe, brand and cooking method can change the real numbers.</Text>
     </Card>
+
     <Text style={{ color: C.text, fontSize: 19, fontWeight: '900', marginBottom: 10 }}>Today's diary</Text>
     <Card>
-      {todaysFood.length === 0 ? <EmptyState emoji="🥣" title="Nothing logged yet" subtitle="Your entries will show up here as you add them." /> :
+      {todaysFood.length === 0 ? <EmptyState emoji="🥣" title="Nothing logged yet" subtitle="Your saved meals will appear here." /> :
         todaysFood.slice().reverse().map(item => <View key={item.id}>
           <FoodRow item={item} />
           <TouchableOpacity onPress={() => removeFood(item.id)} style={{ alignSelf: 'flex-end', paddingVertical: 5 }}><Text style={{ color: '#B27D87', fontWeight: '800', fontSize: 10 }}>REMOVE</Text></TouchableOpacity>
@@ -293,11 +407,10 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
     </Card>
     <Card style={{ backgroundColor: C.butter, borderColor: '#F0E5CA' }}>
       <Text style={{ color: C.text, fontWeight: '900' }}>📷 Food photo scan</Text>
-      <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>AI portion and nutrition recognition is planned for a later milestone. For now, manual entries keep your diary usable.</Text>
+      <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>Photo recognition is a separate AI feature we can add next. The current catalogue calculator works offline and never guesses from a photo.</Text>
     </Card>
   </ScrollView>;
 }
-
 function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Strength');
