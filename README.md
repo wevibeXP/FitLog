@@ -1,48 +1,45 @@
 # Fitlog
 
-iOS-first personal fitness and nutrition tracking app, built with Expo and React Native.
+Fitlog is an iOS-first personal wellness tracker built with Expo and React Native. The visual direction is soft pastel, warm, and deliberately non-clinical.
 
-## Current milestone
+## Current MVP
 
-- Six-step personal onboarding flow.
-- Initial BMR, TDEE, calorie and macro estimates with conservative planning guardrails.
-- Dark interface designed for iPhone.
-- iOS is the only configured platform.
+- Six-step onboarding and a provisional energy / macro assessment.
+- Today dashboard with daily calorie and macro totals.
+- Manual food diary with meal type, calories, protein, carbs and fat.
+- Movement log for strength, Pilates, walking, running, cycling and mobility.
+- Water intake quick logging.
+- Progress check-ins for weight, waist, hips and sleep.
+- Local persistence on the iPhone using AsyncStorage.
+- iOS-only Expo configuration.
 
-This is an early prototype. User data is currently held in memory and resets when the app reloads. Authentication, persistent storage, Apple Health / HealthKit, Hevy, food recognition, and AI Coach Mode are not implemented yet.
+## Run in Expo Go
 
-## Run on an iPhone with Expo Go
+Requirements: Node.js 22.13+ and the current Expo Go app on iOS.
 
-1. Install **Node.js 22.13 or newer** on your development machine. This project is pinned to Expo SDK 54 so it can be previewed with the Expo Go app currently available on the iOS App Store. SDK 55+ requires a separately built Expo Go app or a development build for physical iPhone testing.
-2. Install **Expo Go** from the iOS App Store.
-3. Create or sign in to an Expo account.
-4. In this repository, run:
+```bash
+npm install
+npx expo install --fix
+npx expo-doctor@latest
+npx tsc --noEmit
+npx expo start --tunnel --clear
+```
 
-   ```bash
-   npm install
-   npx expo install --fix
-   npx expo-doctor
-   npx expo login
-   npx expo start --tunnel
-   ```
+Scan the QR code with the iPhone camera and open it in Expo Go. Keep the Codespace running while testing.
 
-5. Sign in to the same Expo account inside the Expo Go app on your iPhone.
-6. Scan the QR code displayed by the Expo CLI using your iPhone camera, then open it in Expo Go.
+## Data and privacy
 
-If you use GitHub Codespaces, run the Expo command in the Codespaces terminal. Keep the Codespace running while testing.
+This MVP stores profile information and logs locally on the device using AsyncStorage. There is no account, cloud sync, external analytics or server API configured. App removal or clearing its data can delete local entries. AsyncStorage is not an encrypted health-data vault; do not store highly sensitive medical details in this prototype.
 
-## Next iOS milestones
+## Not implemented yet
 
-1. Validate onboarding on a physical iPhone.
-2. Add persistent local and cloud storage.
-3. Add HealthKit through a custom development build.
-4. Add food logging, workout tracking, and AI Coach Mode.
-5. Prepare a production build and TestFlight distribution.
+- AI food photo recognition and verified nutrition database lookup.
+- Apple Health / HealthKit permissions and imports.
+- Hevy integration.
+- Cloud account, backend sync, export / restore and multi-device support.
+- AI Coach Mode.
+- Production signing, TestFlight and App Store release.
 
-## Apple distribution
+## Nutrition and safety
 
-Expo Go is for development preview only. A custom development build is needed for native integrations such as HealthKit. Installing cloud-built development builds on a registered physical iPhone requires Apple signing credentials and an active Apple Developer Program membership. TestFlight and App Store distribution also require a paid Apple Developer Program membership.
-
-## Safety note
-
-Calorie and macro values are estimates, not medical advice. The assessment prototype withholds calorie and macro prescriptions for under-18 users and selected health review flags.
+Energy and macro calculations are estimates, not medical advice or a diagnosis. Users can manually edit logs. The app does not calculate or award exercise calories, and it withholds calorie / macro prescriptions for under-18 users or selected health-review flags. Seek qualified guidance for personal medical or nutrition needs.
