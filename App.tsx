@@ -246,6 +246,12 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
   const [amount, setAmount] = useState('1');
   const [unit, setUnit] = useState<NutritionUnit>('serving');
   const [draft, setDraft] = useState<DraftFood[]>([]);
+  const [customMode, setCustomMode] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customCalories, setCustomCalories] = useState('');
+  const [customProtein, setCustomProtein] = useState('');
+  const [customCarbs, setCustomCarbs] = useState('');
+  const [customFat, setCustomFat] = useState('');
   const date = localDateKey();
   const todaysFood = data.food.filter(item => item.date === date);
   const totals = todaysFood.reduce((sum, item) => ({
@@ -319,6 +325,27 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
     Alert.alert('Meal saved 🌷', 'Fitlog added the estimated calories and macros to today’s diary.');
   };
 
+  const saveCustomFood = () => {
+    const kcal = Number(customCalories);
+    if (!customName.trim() || !Number.isFinite(kcal) || kcal < 0) {
+      Alert.alert('Check the custom food', 'Enter a food name and a valid calorie value.');
+      return;
+    }
+    const entry: FoodEntry = {
+      id: makeId(), date, name: customName.trim(), meal,
+      calories: kcal,
+      protein: Number(customProtein) || 0,
+      carbs: Number(customCarbs) || 0,
+      fat: Number(customFat) || 0,
+      createdAt: Date.now(),
+      estimateMethod: 'manual',
+    };
+    update(current => ({ ...current, food: [...current.food, entry] }));
+    setCustomName(''); setCustomCalories(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
+    setCustomMode(false); setQuery('');
+    Alert.alert('Custom entry saved', 'Your manually entered nutrition values were added to the diary.');
+  };
+
   const removeFood = (id: string) => Alert.alert('Remove this entry?', 'This only removes the selected food log.', [
     { text: 'Keep it', style: 'cancel' },
     { text: 'Remove', style: 'destructive', onPress: () => update(current => ({ ...current, food: current.food.filter(item => item.id !== id) })) },
@@ -351,6 +378,20 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
           <Text style={{ color: C.accent, fontWeight: '900', fontSize: 12 }}>{Math.round(food.kcal * food.servingGrams / 100)} kcal</Text>
           <Text style={{ color: C.accent, fontSize: 20, marginLeft: 10 }}>＋</Text>
         </TouchableOpacity>)}
+        <TouchableOpacity onPress={() => { setCustomName(query.trim()); setCustomMode(value => !value); }} style={{ paddingVertical: 10, alignSelf: 'flex-start' }}>
+          <Text style={{ color: C.accent, fontSize: 11, fontWeight: '900' }}>{customMode ? 'CLOSE CUSTOM ENTRY' : 'CAN’T FIND YOUR FOOD? ADD CUSTOM VALUES'}</Text>
+        </TouchableOpacity>
+      </View>}
+      {customMode && <View style={{ backgroundColor: C.butter, borderRadius: 17, borderWidth: 1, borderColor: '#F0E5CA', padding: 14, marginBottom: 13 }}>
+        <Text style={{ color: C.text, fontWeight: '900', marginBottom: 10 }}>Custom food or recipe</Text>
+        <TextField label="Food name" value={customName} onChange={setCustomName} placeholder="e.g. Homemade chicken curry" />
+        <TextField label="Calories" value={customCalories} onChange={setCustomCalories} placeholder="Only for unlisted foods" keyboardType="decimal-pad" suffix="kcal" />
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flex: 1 }}><TextField label="Protein" value={customProtein} onChange={setCustomProtein} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+          <View style={{ flex: 1 }}><TextField label="Carbs" value={customCarbs} onChange={setCustomCarbs} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+          <View style={{ flex: 1 }}><TextField label="Fat" value={customFat} onChange={setCustomFat} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+        </View>
+        <ActionButton label="SAVE CUSTOM ENTRY" onPress={saveCustomFood} />
       </View>}
 
       {selectedFood && <View style={{ backgroundColor: '#F7F2FC', borderWidth: 1, borderColor: '#E4D9F2', borderRadius: 18, padding: 15, marginTop: 4, marginBottom: 12 }}>
