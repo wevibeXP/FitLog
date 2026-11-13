@@ -1,5 +1,5 @@
 import type { CategorySample, WorkoutSample } from '@appeeky/expo-healthkit';
-import type { FitlogData, DailyActivityEntry, SleepEntry, WorkoutEntry } from './tracker';
+import type { FitlogData, DailyActivityEntry, PeriodCycleEntry, SleepEntry, WorkoutEntry } from './tracker';
 import { localDateKey } from './tracker';
 
 type HealthKitApi = typeof import('@appeeky/expo-healthkit');
@@ -29,6 +29,7 @@ export type HealthSyncSummary = {
   activeCalories: number | null;
   workoutsImported: number;
   sleepNightsImported: number;
+  periodsImported: number;
   checkedAt: number;
   backgroundDeliveryEnabled: boolean;
   queryWarnings: string[];
@@ -165,6 +166,73 @@ function mergeSleep(existing: SleepEntry[], imported: SleepEntry[]): SleepEntry[
   return [...keep, ...imported].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+const MENSTRUAL_CYCLE_START_KEY = 'HKMetadataKeyMenstrualCycleStart';
+
+function isCycleStart(sample: CategorySample): boolean {
+  const marker = sample.metadata?.[MENSTRUAL_CYCLE_START_KEY];
+  return marker != null && ['true', '1', 'yes'].includes(String(marker).trim().toLowerCase());
+}
+
+function flowLabel(value: number): PeriodCycleEntry['flow'] | null {
+  if (value === 4) return 'heavy';
+  if (value === 3) return 'medium';
+  if (value === 2) return 'light';
+  if (value === 1) return 'unspecified';
+  // HealthKit's deprecated .none value is 5, so it is deliberately not recorded as a period day.
+  return null;
+}
+
+function buildPeriodCycles(samples: CategorySample[]): PeriodCycleEntry[] {
+  const sorted = samples
+    .filter(sample => flowLabel(sample.value) !== null)
+    .slice()
+    .sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+
+  const cycles: PeriodCycleEntry[] = [];
+  let previousSampleEnd: number | null = null;
+  const severity: Record<PeriodCycleEntry['flow'], number> = {
+    unspecified: 1,
+    light: 2,
+    medium: 3,
+    heavy: 4,
+  };
+
+  for (const sample of sorted) {
+    const hasMarker = sample.metadata?.[MENSTRUAL_CYCLE_START_KEY] != null;
+    const gapDays = previousSampleEnd == null
+      ? Number.POSITIVE_INFINITY
+      : (sample.startDate.getTime() - previousSampleEnd) / 86_400_000;
+    // Apple marks the first sample of each period explicitly. Older third-party
+    // records without that metadata are only split after a clear multi-day gap.
+    const startsNewCycle = cycles.length === 0 || isCycleStart(sample) || (!hasMarker && gapDays > 4);
+    const flow = flowLabel(sample.value)!;
+
+    if (startsNewCycle) {
+      cycles.push({
+        id: 'healthkit-period-' + localDateKey(sample.startDate),
+        startDate: localDateKey(sample.startDate),
+        endDate: localDateKey(sample.endDate),
+        flow,
+        source: 'healthkit',
+        healthKitSampleIds: [sample.uuid],
+      });
+    } else {
+      const current = cycles[cycles.length - 1];
+      if (localDateKey(sample.endDate) > current.endDate) current.endDate = localDateKey(sample.endDate);
+      if (severity[flow] > severity[current.flow]) current.flow = flow;
+      current.healthKitSampleIds.push(sample.uuid);
+    }
+    previousSampleEnd = Math.max(previousSampleEnd ?? 0, sample.endDate.getTime());
+  }
+
+  return cycles;
+}
+
+function mergePeriodCycles(existing: PeriodCycleEntry[] | undefined, imported: PeriodCycleEntry[]): PeriodCycleEntry[] {
+  const manualOrOther = (existing ?? []).filter(entry => entry.source !== 'healthkit');
+  return [...manualOrOther, ...imported].sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+
 export async function syncAppleHealth(
   current: FitlogData,
   options: HealthSyncOptions = {}
@@ -178,6 +246,7 @@ export async function syncAppleHealth(
     hk.QuantityType.stepCount,
     hk.QuantityType.activeEnergyBurned,
     hk.CategoryType.sleepAnalysis,
+    hk.CategoryType.menstrualFlow,
     hk.WorkoutType.workout,
   ];
 
@@ -204,9 +273,10 @@ export async function syncAppleHealth(
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const historyStart = addDays(todayStart, -13);
+  const cycleHistoryStart = addDays(todayStart, -730);
   const warnings: string[] = [];
 
-  const [stepsResult, energyResult, workoutsResult, sleepResult] = await Promise.all([
+  const [stepsResult, energyResult, workoutsResult, sleepResult, menstrualResult] = await Promise.all([
     hk.queryStatistics({
       type: hk.QuantityType.stepCount,
       unit: hk.Unit.count,
@@ -240,6 +310,15 @@ export async function syncAppleHealth(
       warnings.push('Sleep could not be read: ' + (error instanceof Error ? error.message : 'unknown error'));
       return [] as CategorySample[];
     }),
+    hk.queryCategorySamples({
+      type: hk.CategoryType.menstrualFlow,
+      from: cycleHistoryStart,
+      to: now,
+      ascending: true,
+    }).catch(error => {
+      warnings.push('Period history could not be read: ' + (error instanceof Error ? error.message : 'unknown error'));
+      return [] as CategorySample[];
+    }),
   ]);
 
   const todayKey = localDateKey(now);
@@ -257,11 +336,13 @@ export async function syncAppleHealth(
 
   const importedWorkouts = workoutsResult.map(toWorkoutEntry);
   const importedSleep = buildSleepEntries(sleepResult, hk);
+  const importedPeriods = buildPeriodCycles(menstrualResult);
 
   const nextData: FitlogData = {
     ...current,
     workouts: mergeWorkouts(current.workouts, importedWorkouts),
     sleep: mergeSleep(current.sleep, importedSleep),
+    periodCycles: mergePeriodCycles(current.periodCycles, importedPeriods),
     activityByDate: syncedActivity
       ? { ...(current.activityByDate ?? {}), [todayKey]: syncedActivity }
       : current.activityByDate,
@@ -280,6 +361,7 @@ export async function syncAppleHealth(
       activeCalories: syncedActivity?.activeCalories ?? null,
       workoutsImported: importedWorkouts.length,
       sleepNightsImported: importedSleep.length,
+      periodsImported: importedPeriods.length,
       checkedAt: now.getTime(),
       backgroundDeliveryEnabled,
       queryWarnings: warnings,
