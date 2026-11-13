@@ -1,4 +1,3 @@
-import type * as HealthKitTypes from '@appeeky/expo-healthkit';
 import type { CategorySample, WorkoutSample } from '@appeeky/expo-healthkit';
 import type { FitlogData, DailyActivityEntry, SleepEntry, WorkoutEntry } from './tracker';
 import { localDateKey } from './tracker';
@@ -193,7 +192,7 @@ export async function syncAppleHealth(
       const registrations = await Promise.allSettled(
         readTypes.map(type => hk.enableBackgroundDelivery(type, hk.UpdateFrequency.hourly))
       );
-      backgroundDeliveryEnabled = registrations.some(
+      backgroundDeliveryEnabled = registrations.length === readTypes.length && registrations.every(
         result => result.status === 'fulfilled' && result.value === true
       );
     } catch {
