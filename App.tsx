@@ -14,7 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Onboarding from './Onboarding';
 import { assess, AssessmentInput } from './assessment';
-import { estimateFood, searchFoods, suggestAmount, NutritionFood, NutritionUnit, FoodEstimate } from './nutrition';
+import { estimateFood, searchFoods, suggestAmount } from './nutrition';
+import type { NutritionFood, NutritionUnit, FoodEstimate } from './nutrition';
 import {
   createInitialData,
   FitlogData,
