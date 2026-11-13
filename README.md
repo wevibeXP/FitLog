@@ -13,7 +13,7 @@ This is an early prototype. User data is currently held in memory and resets whe
 
 ## Run on an iPhone with Expo Go
 
-1. Install **Node.js 22.13 or newer** on your development machine. This project is pinned to Expo SDK 57 for physical-device Expo Go compatibility during the SDK 58 transition.
+1. Install **Node.js 22.13 or newer** on your development machine. This project is pinned to Expo SDK 54 so it can be previewed with the Expo Go app currently available on the iOS App Store. SDK 55+ requires a separately built Expo Go app or a development build for physical iPhone testing.
 2. Install **Expo Go** from the iOS App Store.
 3. Create or sign in to an Expo account.
 4. In this repository, run:
