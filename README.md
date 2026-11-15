@@ -21,6 +21,8 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 - Shared day navigation across Today, Food and Move to review and log historical daily entries; future dates are disabled.
 - Water intake quick logging.
 - Progress check-ins for weight, bust, underbust, waist, lower abdomen, hips, glutes, left/right thighs, upper arms, forearms, calves, neck and manually logged sleep.
+- Dedicated cycle tracker reachable from Progress, with manual historical period dates, flow, daily mood/appetite/bloating/symptom/craving notes, and optional sexual-activity / contraception / hormone-medication records.
+- Local cycle-pattern comparisons for mood, cravings, bloating and weight around recorded period dates; these are descriptive associations, not diagnoses or predictions.
 - Measurement history saved as dated snapshots, with cm or inch input (stored consistently in cm).
 - Local persistence in an SQLCipher-encrypted SQLite database, with the database key kept in iOS SecureStore.
 - One-time migration of the previous AsyncStorage app-state record into encrypted storage on the first upgraded launch.
@@ -101,14 +103,14 @@ The current offline catalogue contains a small starter selection of common foods
 
 ## Data and privacy
 
-Profile information, food logs, movement data and future cycle-journal records are intended to remain local in an SQLCipher-encrypted SQLite database. A random database key is stored separately in the platform secure store. The app verifies SQLCipher before reading or writing and does not fall back to plaintext if encryption is unavailable. Raw motion samples are not persisted. There is currently no account, cloud sync, external analytics or AI server API configured. App removal, clearing app data or losing the secure database key can make local entries unrecoverable; retain a future encrypted export/backup when that feature is implemented. Cycle, sexual-activity and contraception records will not be sent to an AI service by default.
+Profile information, food logs, movement data and cycle-journal records remain local in an SQLCipher-encrypted SQLite database. A random database key is stored separately in the platform secure store. The app verifies SQLCipher before reading or writing and does not fall back to plaintext if encryption is unavailable. Raw motion samples are not persisted. There is currently no account, cloud sync, external analytics or AI server API configured. App removal, clearing app data or losing the secure database key can make local entries unrecoverable; retain a future encrypted export/backup when that feature is implemented. Cycle, sexual-activity and contraception records will not be sent to an AI service by default.
 
 ## Not implemented yet
 
 - Secure AI food text estimates and photo recognition (requires a server-side AI endpoint; no API key is embedded in the iOS app).
 - Validated walking/running/workout classification from raw sensor data.
 - Background sensor sampling or always-on workout detection.
-- Manual cycle journal, historical period entry and cycle-aware symptom insights (HealthKit period history import is only a partial foundation).
+- AI-powered cycle insights (current cycle summaries are on-device comparisons; AI is not connected).
 - Automatic sleep and heart-rate capture.
 - Hevy integration.
 - Cloud account, backend sync, export / restore and multi-device support.
