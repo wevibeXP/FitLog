@@ -49,7 +49,7 @@ public class FitlogMotionModule: Module {
           return
         }
         guard let self = self, let data = data else {
-          promise.resolve([:])
+          promise.resolve(["steps": 0])
           return
         }
         promise.resolve(self.serialize(data))
