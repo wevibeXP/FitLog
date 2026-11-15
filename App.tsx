@@ -136,6 +136,21 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
   const workouts = data.workouts.filter(item => item.date === date);
   const water = data.waterByDate[date] || 0;
   const activity = data.activityByDate?.[date];
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date();
+    day.setHours(12, 0, 0, 0);
+    day.setDate(day.getDate() - 6 + index);
+    return {
+      date: localDateKey(day),
+      label: new Intl.DateTimeFormat('en-IN', { weekday: 'short' }).format(day).slice(0, 1),
+      steps: data.activityByDate?.[localDateKey(day)]?.steps ?? null,
+    };
+  });
+  const trackedWeekDays = weekDays.filter(day => day.steps != null);
+  const weekAverage = trackedWeekDays.length > 0
+    ? Math.round(trackedWeekDays.reduce((sum, day) => sum + (day.steps ?? 0), 0) / trackedWeekDays.length)
+    : null;
+  const maxWeekSteps = Math.max(1, ...weekDays.map(day => day.steps ?? 0));
   const [stepCount, setStepCount] = useState<number | null>(activity?.steps ?? null);
   const [motionStatus, setMotionStatus] = useState<'checking' | 'needs-permission' | 'enabled' | 'denied' | 'unavailable' | 'error'>('checking');
   const [motionMessage, setMotionMessage] = useState('');
@@ -209,8 +224,36 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
         const now = new Date();
         const startOfDay = new Date(now);
         startOfDay.setHours(0, 0, 0, 0);
-        const result = await Pedometer.getStepCountAsync(startOfDay, now);
+        const [result, previousDays] = await Promise.all([
+          Pedometer.getStepCountAsync(startOfDay, now),
+          Promise.all(Array.from({ length: 6 }, async (_, index) => {
+            const dayStart = new Date(startOfDay);
+            dayStart.setDate(dayStart.getDate() - (6 - index));
+            const dayEnd = new Date(dayStart);
+            dayEnd.setDate(dayEnd.getDate() + 1);
+            try {
+              const dayResult = await Pedometer.getStepCountAsync(dayStart, dayEnd);
+              return { date: localDateKey(dayStart), steps: dayResult.steps };
+            } catch {
+              return null;
+            }
+          })),
+        ]);
         if (!mounted) return;
+        update(current => {
+          const activityByDate = { ...(current.activityByDate ?? {}) };
+          for (const day of previousDays) {
+            if (!day) continue;
+            const previous = activityByDate[day.date];
+            activityByDate[day.date] = {
+              date: day.date,
+              steps: day.steps,
+              activeCalories: previous?.activeCalories,
+              source: 'pedometer',
+            };
+          }
+          return { ...current, activityByDate };
+        });
         baseSteps = result.steps;
         persistSteps(baseSteps);
         subscription = Pedometer.watchStepCount(result => {
@@ -353,6 +396,19 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
           <Text style={{ color: C.rose, fontSize: 10, fontWeight: '900', letterSpacing: 0.7 }}>ACTIVE CALORIES</Text>
           <Text style={{ color: C.text, fontSize: 25, fontWeight: '900', marginTop: 5 }}>{activity?.activeCalories != null ? Math.round(activity.activeCalories) : '—'}</Text>
           <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>kcal reported active</Text>
+        </View>
+      </View>
+      <View style={{ marginTop: 15 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Eyebrow>LAST 7 DAYS</Eyebrow>
+          <Text style={{ color: C.muted, fontSize: 9 }}>{weekAverage != null ? 'Avg ' + weekAverage.toLocaleString('en-IN') + ' / tracked day' : 'Building your history'}</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 76, gap: 7, marginTop: 8 }}>
+          {weekDays.map(day => <View key={day.date} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+            <Text style={{ color: C.muted, fontSize: 8, marginBottom: 4 }}>{day.steps != null ? (day.steps >= 1000 ? (day.steps / 1000).toFixed(1) + 'k' : String(day.steps)) : '—'}</Text>
+            <View style={{ width: '72%', height: day.steps != null ? Math.max(4, (day.steps / maxWeekSteps) * 42) : 3, backgroundColor: day.steps != null ? C.accent : C.line, borderRadius: 7 }} />
+            <Text style={{ color: C.muted, fontSize: 9, marginTop: 5 }}>{day.label}</Text>
+          </View>)}
         </View>
       </View>
       <View style={{ marginTop: 15 }}>
@@ -1152,7 +1208,7 @@ export default function App() {
     }
   };
 
-  const update: UpdateData = useCallback(recipe => setData(current => current ? recipe(current) : current), []);
+  const update: UpdateData = useCallback((recipe: (current: FitlogData) => FitlogData) => setData(current => current ? recipe(current) : current), []);
   const finishOnboarding = (profile: AssessmentInput) => {
     const result = assess(profile);
     setData(createInitialData(profile, result));
