@@ -24,10 +24,14 @@ export type WorkoutEntry = {
   category: string;
   minutes: number;
   createdAt: number;
-  source?: 'manual' | 'healthkit';
+  source?: 'manual' | 'healthkit' | 'pedometer';
   healthKitId?: string;
   healthKitActivityType?: number;
   activeCalories?: number;
+  steps?: number;
+  cadenceSpm?: number;
+  averageMotionMps2?: number;
+  motionSamples?: number;
 };
 
 export type WeightEntry = { id: string; date: string; kg: number };
