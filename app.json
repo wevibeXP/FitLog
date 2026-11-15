@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fitlog",
     "slug": "fitlog",
-    "version": "0.4.1",
+    "version": "0.5.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "platforms": [
@@ -11,17 +11,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.wevibexp.fitlog",
-      "buildNumber": "3"
+      "buildNumber": "4"
     },
     "plugins": [
-      [
-        "@appeeky/expo-healthkit",
-        {
-          "healthSharePermission": "Fitlog reads your steps, active energy, workouts, sleep and period records from Apple Health so they can appear in your dashboard and wellness history. Fitlog only reads this information and does not write to Apple Health.",
-          "healthUpdatePermission": false,
-          "isBackgroundDeliveryEnabled": true
-        }
-      ],
       [
         "expo-sensors",
         {
