@@ -126,6 +126,93 @@ function MovementMetric({ emoji, label, value, detail, tint }: { emoji: string; 
 }
 
 
+type DailyActivity = NonNullable<FitlogData['activityByDate']>[string];
+
+type ActiveEnergyEstimate = {
+  calories: number | null;
+  isReported: boolean;
+  detail: string;
+};
+
+function calculateActiveEnergy({
+  steps,
+  activity,
+  workouts,
+  weightKg,
+  heightCm,
+  age,
+  needsReview,
+}: {
+  steps: number | null;
+  activity?: DailyActivity;
+  workouts: WorkoutEntry[];
+  weightKg: number;
+  heightCm: number;
+  age: number;
+  needsReview: boolean;
+}): ActiveEnergyEstimate {
+  const restingEnergyAllowed = age >= 18 && !needsReview;
+  const stepLengthMeters = (heightCm / 100) * 0.415;
+  const metByCategory: Record<string, number> = {
+    strength: 3.5, pilates: 3, walk: 3.3, run: 7, cycling: 6, mobility: 2, other: 3,
+  };
+  const motionSessionSteps = workouts.reduce((sum, item) =>
+    sum + (item.source === 'motion' ? (item.steps ?? 0) : 0), 0);
+  const estimatedStepsInManualWalkingSessions = workouts.reduce((sum, item) => {
+    if (item.source === 'motion' && item.steps != null) return sum;
+    const type = item.category.toLowerCase();
+    const estimatedCadence = type === 'walk' ? 100 : type === 'run' ? 160 : 0;
+    return sum + item.minutes * estimatedCadence;
+  }, 0);
+
+  // Keep steps already attributed to a logged session out of the daily step estimate.
+  const nonSessionSteps = steps == null
+    ? 0
+    : Math.max(0, steps - motionSessionSteps - estimatedStepsInManualWalkingSessions);
+  const totalStepDistanceMeters = activity?.distanceMeters != null
+    ? activity.distanceMeters
+    : (steps ?? 0) * stepLengthMeters;
+  const nonSessionDistanceMeters = steps != null && steps > 0
+    ? totalStepDistanceMeters * (nonSessionSteps / steps)
+    : 0;
+  const stepCalories = restingEnergyAllowed && steps != null
+    ? (nonSessionDistanceMeters / 1000) * weightKg * 0.5
+    : 0;
+  const hasStepCalories = restingEnergyAllowed && steps != null;
+  const hasRecordedWorkoutCalories = workouts.some(item => item.activeCalories != null);
+  const hasEstimatedWorkoutCalories = workouts.some(item => item.activeCalories == null) && restingEnergyAllowed;
+  const workoutCalories = workouts.reduce((sum, item) => {
+    if (item.activeCalories != null) return sum + item.activeCalories;
+    if (!restingEnergyAllowed) return sum;
+    const met = metByCategory[item.category.toLowerCase()] ?? 3;
+    return sum + Math.max(0, (met - 1) * 3.5 * weightKg / 200) * item.minutes;
+  }, 0);
+  const hasEstimate = hasStepCalories || hasRecordedWorkoutCalories || hasEstimatedWorkoutCalories;
+  const savedDailyActiveCalories = activity?.activeCalories;
+
+  if (savedDailyActiveCalories != null) {
+    return {
+      calories: savedDailyActiveCalories,
+      isReported: true,
+      detail: 'Full-day value saved from another source',
+    };
+  }
+
+  if (hasEstimate && restingEnergyAllowed) {
+    return {
+      calories: stepCalories + workoutCalories,
+      isReported: false,
+      detail: 'Steps ~' + Math.round(stepCalories) + ' + sessions ~' + Math.round(workoutCalories) + ' kcal',
+    };
+  }
+
+  return {
+    calories: null,
+    isReported: false,
+    detail: 'Steps and workout energy estimates unavailable',
+  };
+}
+
 function shiftDateKey(dateKey: string, offset: number): string {
   const date = new Date(dateKey + 'T12:00:00');
   date.setDate(date.getDate() + offset);
@@ -192,6 +279,8 @@ function TodayScreen({ data, update, goTo, selectedDate, onDateChange }: { data:
   const workouts = data.workouts.filter(item => item.date === date);
   const water = data.waterByDate[date] || 0;
   const activity = data.activityByDate?.[date];
+  const latestWeightKg = data.weights.filter(item => item.date <= date)
+    .sort((a, b) => b.date.localeCompare(a.date))[0]?.kg ?? data.profile.weightKg;
   const weekDays = Array.from({ length: 7 }, (_, index) => {
     const day = new Date(date + 'T12:00:00');
     day.setDate(day.getDate() - 6 + index);
@@ -207,6 +296,15 @@ function TodayScreen({ data, update, goTo, selectedDate, onDateChange }: { data:
     : null;
   const maxWeekSteps = Math.max(1, ...weekDays.map(day => day.steps ?? 0));
   const [stepCount, setStepCount] = useState<number | null>(activity?.steps ?? null);
+  const activeEnergy = calculateActiveEnergy({
+    steps: stepCount ?? activity?.steps ?? null,
+    activity,
+    workouts,
+    weightKg: latestWeightKg,
+    heightCm: data.profile.heightCm,
+    age: data.profile.age,
+    needsReview: data.assessment.needsReview,
+  });
   const [motionStatus, setMotionStatus] = useState<'checking' | 'needs-permission' | 'enabled' | 'denied' | 'unavailable' | 'error'>('checking');
   const [motionMessage, setMotionMessage] = useState('');
   const [activeCaloriesInput, setActiveCaloriesInput] = useState(activity?.activeCalories != null ? String(activity.activeCalories) : '');
@@ -466,8 +564,8 @@ function TodayScreen({ data, update, goTo, selectedDate, onDateChange }: { data:
         </View>
         <View style={{ flex: 1, backgroundColor: C.peach, padding: 13, borderRadius: 16 }}>
           <Text style={{ color: C.rose, fontSize: 10, fontWeight: '900', letterSpacing: 0.7 }}>ACTIVE CALORIES</Text>
-          <Text style={{ color: C.text, fontSize: 25, fontWeight: '900', marginTop: 5 }}>{activity?.activeCalories != null ? Math.round(activity.activeCalories) : '—'}</Text>
-          <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>kcal reported active</Text>
+          <Text style={{ color: C.text, fontSize: 25, fontWeight: '900', marginTop: 5 }}>{activeEnergy.calories != null ? (activeEnergy.isReported ? '' : '~') + Math.round(activeEnergy.calories).toLocaleString('en-IN') : '—'}</Text>
+          <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>{activeEnergy.isReported ? 'kcal reported active' : activeEnergy.calories != null ? 'kcal estimated active' : 'kcal unavailable'}</Text>
         </View>
       </View>
       <View style={{ marginTop: 15 }}>
@@ -494,7 +592,7 @@ function TodayScreen({ data, update, goTo, selectedDate, onDateChange }: { data:
           <TextField label="Active calories from a trusted source" value={activeCaloriesInput} onChange={value => { setActiveCaloriesInput(value); setActivitySaved(false); }} placeholder="Only enter a trusted value" keyboardType="decimal-pad" suffix="kcal" />
         </View>
         <ActionButton label={activitySaved ? 'ACTIVE CALORIES SAVED ✓' : 'SAVE ACTIVE CALORIES'} onPress={saveDailyMovement} tone="soft" />
-        <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>{activity?.source === 'pedometer' || activity?.source === 'cmpedometer' ? 'Steps are counted by your iPhone. Active calories are separate and are never guessed from step count.' : 'Step totals come from the iPhone pedometer once Motion & Fitness access is enabled. Active calories are not estimated.'}</Text>
+        <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>Fitlog estimates active calories from steps and logged sessions. A trusted full-day value entered here overrides that estimate.</Text>
       </>}
     </Card>
 
@@ -825,50 +923,19 @@ function MoveScreen({ data, update, isActive, selectedDate, onDateChange }: { da
   const restingEnergyText = !restingEnergyAllowed ? '—'
     : bmrLow === bmrHigh ? '~' + restingEnergyLow.toLocaleString('en-IN') + ' kcal'
       : '~' + restingEnergyLow.toLocaleString('en-IN') + '–' + restingEnergyHigh.toLocaleString('en-IN') + ' kcal';
-  const metByCategory: Record<string, number> = {
-    strength: 3.5, pilates: 3, walk: 3.3, run: 7, cycling: 6, mobility: 2, other: 3,
-  };
-  const motionSessionSteps = todays.reduce((sum, item) =>
-    sum + (item.source === 'motion' ? (item.steps ?? 0) : 0), 0);
-  const estimatedStepsInManualWalkingSessions = todays.reduce((sum, item) => {
-    if (item.source === 'motion' && item.steps != null) return sum;
-    const type = item.category.toLowerCase();
-    const estimatedCadence = type === 'walk' ? 100 : type === 'run' ? 160 : 0;
-    return sum + item.minutes * estimatedCadence;
-  }, 0);
-  // Subtract session steps from the all-day step count so a walk/run isn't counted twice.
-  const nonSessionSteps = dailySteps == null ? 0 : Math.max(0, dailySteps - motionSessionSteps - estimatedStepsInManualWalkingSessions);
-  const totalStepDistanceMeters = todayActivity?.distanceMeters != null
-    ? todayActivity.distanceMeters
-    : (dailySteps ?? 0) * stepLengthMeters;
-  const nonSessionDistanceMeters = dailySteps != null && dailySteps > 0
-    ? totalStepDistanceMeters * (nonSessionSteps / dailySteps)
-    : 0;
-  const stepCaloriesEstimate = restingEnergyAllowed && dailySteps != null
-    ? (nonSessionDistanceMeters / 1000) * latestWeightKg * 0.5
-    : 0;
-  const hasStepCaloriesEstimate = restingEnergyAllowed && dailySteps != null;
-  const hasRecordedWorkoutCalories = todays.some(item => item.activeCalories != null);
-  const hasEstimatedWorkoutCalories = todays.some(item => item.activeCalories == null) && restingEnergyAllowed;
-  const sessionCaloriesValue = todays.reduce((sum, item) => {
-    if (item.activeCalories != null) return sum + item.activeCalories;
-    if (!restingEnergyAllowed) return sum;
-    const met = metByCategory[item.category.toLowerCase()] ?? 3;
-    return sum + Math.max(0, (met - 1) * 3.5 * latestWeightKg / 200) * item.minutes;
-  }, 0);
-  const hasAnyActiveEnergy = hasStepCaloriesEstimate || hasRecordedWorkoutCalories || hasEstimatedWorkoutCalories;
-  const combinedActiveCalories = stepCaloriesEstimate + sessionCaloriesValue;
-  const savedDailyActiveCalories = data.activityByDate?.[date]?.activeCalories;
-  const activeEnergyText = savedDailyActiveCalories != null
-    ? savedDailyActiveCalories.toLocaleString('en-IN') + ' kcal'
-    : hasAnyActiveEnergy && restingEnergyAllowed
-      ? '~' + Math.round(combinedActiveCalories).toLocaleString('en-IN') + ' kcal'
-      : '—';
-  const activeEnergyDetail = savedDailyActiveCalories != null
-    ? 'Full-day value saved from another source'
-    : hasAnyActiveEnergy
-      ? 'Steps ~' + Math.round(stepCaloriesEstimate) + ' + sessions ~' + Math.round(sessionCaloriesValue) + ' kcal'
-      : 'Steps and workout energy estimates unavailable';
+  const activeEnergy = calculateActiveEnergy({
+    steps: dailySteps ?? todayActivity?.steps ?? null,
+    activity: todayActivity,
+    workouts: todays,
+    weightKg: latestWeightKg,
+    heightCm: data.profile.heightCm,
+    age: data.profile.age,
+    needsReview: data.assessment.needsReview,
+  });
+  const activeEnergyText = activeEnergy.calories != null
+    ? (activeEnergy.isReported ? '' : '~') + Math.round(activeEnergy.calories).toLocaleString('en-IN') + ' kcal'
+    : '—';
+  const activeEnergyDetail = activeEnergy.detail;
 
   useEffect(() => {
     const savedSteps = data.activityByDate?.[date]?.steps;
