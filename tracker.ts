@@ -13,8 +13,18 @@ export type FoodEntry = {
   carbs: number;
   fat: number;
   createdAt: number;
-  estimateMethod?: 'catalogue' | 'manual';
-  ingredients?: Array<{ foodId: string; name: string; grams: number }>;
+  estimateMethod?: 'catalogue' | 'manual' | 'ai';
+  estimateSource?: 'catalogue' | 'manual' | 'ai_text' | 'ai_photo' | 'manual_correction';
+  estimateConfidence?: 'low' | 'medium' | 'high';
+  ingredients?: Array<{
+    foodId: string;
+    name: string;
+    grams: number;
+    calories?: number;
+    protein?: number;
+    carbs?: number;
+    fat?: number;
+  }>;
 };
 
 export type WorkoutEntry = {
