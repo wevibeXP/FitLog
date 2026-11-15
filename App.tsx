@@ -337,10 +337,13 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
         activityByDate: {
           ...(current.activityByDate ?? {}),
           [date]: {
+            ...previous,
             date,
             steps: previous?.steps ?? stepCount ?? undefined,
             activeCalories,
-            source: previous?.source === 'pedometer' ? 'pedometer' : 'manual',
+            source: previous?.source === 'cmpedometer'
+              ? 'cmpedometer'
+              : previous?.source === 'pedometer' ? 'pedometer' : 'manual',
           },
         },
       };
@@ -770,8 +773,14 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
   }, 0);
   // Subtract session steps from the all-day step count so a walk/run isn't counted twice.
   const nonSessionSteps = dailySteps == null ? 0 : Math.max(0, dailySteps - motionSessionSteps - estimatedStepsInManualWalkingSessions);
+  const totalStepDistanceMeters = todayActivity?.distanceMeters != null
+    ? todayActivity.distanceMeters
+    : (dailySteps ?? 0) * stepLengthMeters;
+  const nonSessionDistanceMeters = dailySteps != null && dailySteps > 0
+    ? totalStepDistanceMeters * (nonSessionSteps / dailySteps)
+    : 0;
   const stepCaloriesEstimate = restingEnergyAllowed && dailySteps != null
-    ? ((nonSessionSteps * stepLengthMeters) / 1000) * latestWeightKg * 0.5
+    ? (nonSessionDistanceMeters / 1000) * latestWeightKg * 0.5
     : 0;
   const hasStepCaloriesEstimate = restingEnergyAllowed && dailySteps != null;
   const hasRecordedWorkoutCalories = todays.some(item => item.activeCalories != null);
