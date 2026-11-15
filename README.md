@@ -5,7 +5,7 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 ## Current MVP
 
 - Six-step onboarding and a provisional energy / macro assessment.
-- Today dashboard with daily calorie and macro totals, iPhone pedometer step counts and optional manually entered active calories.
+- iPhone Motion Engine using Expo Sensors: daily step totals from Core Motion and user-started live movement sessions using DeviceMotion.
 - iPhone Motion Engine using Expo Sensors: daily step totals from Core Motion and user-started live movement sessions using DeviceMotion.
 - Live session summaries include elapsed time, available session steps, step cadence and an experimental acceleration RMS signal. Raw motion samples are processed in memory and not saved.
 - Searchable starter food catalogue (including common South Indian and Indian foods) with automatic portion-based calories, protein, carbs and fat estimates.
@@ -44,7 +44,7 @@ Fitlog uses `expo-sensors`, which is included in Expo Go for iOS.
 - Live pedometer callbacks pause while Fitlog is backgrounded. Fitlog re-queries the iPhone's step history when you return to the app.
 - DeviceMotion samples are collected only during a session the user explicitly starts. Fitlog stores the session summary (duration, steps, cadence, sample count and RMS signal), not the raw sensor stream.
 - The RMS signal is experimental and depends on phone placement. It is not a validated exercise-intensity classification or calorie estimate.
-- Active calories are not inferred from steps or acceleration. The optional dashboard value remains manual.
+- Motion sensors cannot provide heart rate, sleep stages or menstrual-flow records.
 - Motion sensors cannot provide heart rate, sleep stages or menstrual-flow records. Those require separate sources (for example, an optional native HealthKit integration) or manual logging.
 
 The pedometer API's seven-day history and foreground-only live callback behavior follow the Expo SDK 58 documentation. [Expo Pedometer](https://docs.expo.dev/versions/v58.0.0/sdk/pedometer/) · [Expo Sensors](https://docs.expo.dev/versions/v58.0.0/sdk/sensors/).
@@ -60,7 +60,7 @@ This MVP stores profile information, logs, pedometer totals and session summarie
 ## Not implemented yet
 
 - AI food photo recognition and verified nutrition database lookup.
-- Automatic active-energy or calorie-burn estimation.
+- Automatic sleep, heart-rate or menstrual-cycle capture
 - Validated walking/running/workout classification from raw sensor data.
 - Background sensor sampling or always-on workout detection.
 - Automatic sleep, heart-rate or menstrual-cycle capture (these are not available from the iPhone motion sensors).
@@ -71,4 +71,4 @@ This MVP stores profile information, logs, pedometer totals and session summarie
 
 ## Nutrition and safety
 
-Energy and macro calculations are estimates, not medical advice or a diagnosis. Users can manually edit logs. The app does not calculate or award exercise calories, and it withholds calorie / macro prescriptions for under-18 users or selected health-review flags. Seek qualified guidance for personal medical or nutrition needs.
+Energy and macro calculations are estimates, not medical advice or a diagnosis. Workout-energy estimates are approximate activity calculations, not measured total daily active energy or targets. Fitlog withholds calorie / macro prescriptions for under-18 users or selected health-review flags. Seek qualified guidance for personal medical or nutrition needs.
