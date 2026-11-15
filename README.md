@@ -6,9 +6,11 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 
 - Six-step onboarding and a provisional energy / macro assessment.
 - Today dashboard with daily food totals, macro progress, iPhone pedometer steps and optional externally sourced active calories.
-- Move dashboard with detailed daily movement metrics, live iPhone step counts, session logging and movement history.
-- Step-based distance estimate, BMR-based resting-energy estimate and approximate workout energy from logged activity duration.
-- iPhone Motion Engine using Expo Sensors: daily step totals from Core Motion and user-started live movement sessions using DeviceMotion.
+- Move dashboard with detailed daily movement metrics, live iPhone steps, walking distance, floors, pace and workout logging.
+- Active-energy estimate combines step-derived energy and logged workout-session energy while subtracting session-associated steps to reduce double counting.
+- Resting-energy estimate based on profile BMR.
+- Native iOS Core Motion module wrapping Apple's CMPedometer for steps, distance, floors ascended/descended, pace and cadence.
+- Expo Go fallback using Expo Sensors Pedometer for steps and DeviceMotion for user-started sessions.
 - Live session summaries include elapsed time, available session steps, step cadence and an experimental acceleration RMS signal. Raw motion samples are processed in memory and not saved.
 - Searchable starter food catalogue (including common South Indian and Indian foods) with automatic portion-based calories, protein, carbs and fat estimates.
 - Multi-ingredient meal builder so a meal such as eggs + toast can be totalled together.
@@ -36,23 +38,52 @@ npx tsc --noEmit
 npx expo start --go --tunnel --clear
 ```
 
-Scan the QR code with the iPhone Camera and open the project in Expo Go. Keep the Codespace running while testing. The iPhone must be carried for the pedometer to count its steps.
+Scan the QR code with the iPhone Camera and open the project in Expo Go. Keep the Codespace running while testing. The iPhone must be carried for the pedometer to count its steps. Expo Go includes the step-only fallback; the project-specific Core Motion bridge below is not loaded by Expo Go.
+
+## Native iOS development build
+
+Fitlog's local Expo module at `modules/fitlog-motion` wraps Apple's `CMPedometer`. It reads system-generated steps, distance, floors climbed/descended, current and average active pace, and cadence when the iPhone reports those capabilities. The module checks device capability and leaves unsupported metrics unavailable instead of inventing values.
+
+To compile and install the native app on a physical iPhone without using a cloud build:
+
+1. Clone or pull this repository onto your Mac (the native iOS build must run on macOS with Xcode installed).
+2. Open the project folder in Terminal and run:
+
+```bash
+npm install
+npx expo install --fix
+npx expo prebuild --platform ios --clean
+npx expo run:ios --device
+```
+
+3. Select your iPhone, trust the Mac if prompted, enable Developer Mode on the iPhone, and allow Xcode to sign the app with your Personal Team if you are not enrolled in the paid Apple Developer Program.
+4. Once installed, run Metro from the project folder:
+
+```bash
+npx expo start --dev-client --lan --clear
+```
+
+Open the installed Fitlog development app on the iPhone and connect to that development server. Keep the Mac and iPhone on the same Wi-Fi network. If local networking is unreliable, use a tunnel supported by Expo CLI.
+
+A local Xcode build is the practical path for device testing without a paid Apple Developer membership. EAS cloud builds for physical iPhones require Apple signing credentials. A free Personal Team development install is for development/testing and must be refreshed when its provisioning expires. The project has a separate EAS development profile if a cloud build is used later.
+
+Whenever the Swift module, podspec, module config, or app configuration changes, regenerate native projects and rebuild the iOS app. Ordinary TypeScript/UI changes can continue to use Metro without rebuilding the native app.
 
 ## iPhone Motion Engine and movement metrics
 
-Fitlog uses `expo-sensors`, which is included in Expo Go for iOS.
+Fitlog uses Apple's Core Motion pedometer on a native development build, with Expo Sensors as a fallback in Expo Go.
 
-- The iPhone pedometer reads system-counted steps and can query up to the previous seven days.
-- Live pedometer callbacks pause while Fitlog is backgrounded. Fitlog re-queries the iPhone's step history when you return to the app.
-- DeviceMotion samples are collected only during a session the user explicitly starts. Fitlog stores the session summary (duration, steps, cadence, sample count and RMS signal), not the raw sensor stream.
-- The RMS signal is experimental and depends on phone placement. It is not a validated exercise-intensity classification or calorie estimate.
-- The Move dashboard's step-based distance is a rough estimate from profile height and an average walking stride. It cannot distinguish walking from running and is not a GPS or native pedometer distance reading.
+- Apple's `CMPedometer` provides system-generated steps, estimated distance, floors ascended/descended, pace and cadence when supported by the device. The module checks capability flags before displaying these readings.
+- Pedometer callbacks pause while the app is suspended. Fitlog queries today's accumulated data again when the app returns to the foreground.
+- The iPhone's floor counter is Apple's approximate floor count, not a precise architectural floor measurement. It can be unavailable on devices that do not support floor counting.
+- The step-derived distance fallback in Expo Go is a rough estimate from profile height and average stride. It does not distinguish walking from running.
+- Active calories in the daily Move card are an estimate made from remaining daily steps plus logged workout sessions. Steps attributed to a motion session are subtracted from the step component to reduce double counting. For manual walking/running sessions, the subtraction uses a typical cadence estimate. A full-day active-calorie value saved from another trusted source takes precedence.
+- Workout calorie estimates use activity-category MET assumptions and profile weight. They are approximate and are not measured by the iPhone.
 - Resting energy is a population-level BMR estimate prorated through the current day. It is not measured by the iPhone.
-- Workout calories are approximate estimates from logged activity category, duration and profile weight. When a daily active-calorie value is entered from another trusted source, that value takes precedence. The app does not infer whole-day active energy from steps or acceleration.
-- The current Expo Go Pedometer wrapper exposes step counts only. Floors climbed and live walking/running pace require the additional native iOS Core Motion readings and a development build; they are shown as unavailable rather than guessed.
-- Motion sensors cannot provide heart rate, sleep stages or menstrual-flow records. Those require separate sources (for example, a native HealthKit integration) or manual logging.
+- DeviceMotion samples are collected only during a session the user explicitly starts. Fitlog stores the session summary (duration, steps, cadence, sample count and RMS signal), not the raw sensor stream. The RMS signal is experimental and depends on phone placement; it is not a validated exercise-intensity classification or calorie estimate.
+- Motion sensors do not provide heart rate, sleep stages or menstrual-flow records. Those require separate sources or manual logging.
 
-The pedometer API's seven-day history and foreground-only live callback behavior follow the Expo SDK 58 documentation. [Expo Pedometer](https://docs.expo.dev/versions/v58.0.0/sdk/pedometer/) · [Expo Sensors](https://docs.expo.dev/versions/v58.0.0/sdk/sensors/).
+Apple documentation: [CMPedometer](https://developer.apple.com/documentation/coremotion/cmpedometer) · [CMPedometerData](https://developer.apple.com/documentation/coremotion/cmpedometerdata) · [Expo local modules](https://docs.expo.dev/modules/get-started/) · [Expo development builds](https://docs.expo.dev/develop/development-builds/introduction/).
 
 ## Food estimate catalogue
 
@@ -64,7 +95,6 @@ This MVP stores profile information, logs, pedometer totals and session summarie
 
 ## Not implemented yet
 
-- Native Core Motion integration for floors climbed and live walking/running pace.
 - AI food photo recognition and verified nutrition database lookup.
 - Validated walking/running/workout classification from raw sensor data.
 - Background sensor sampling or always-on workout detection.
