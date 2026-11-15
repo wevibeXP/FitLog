@@ -48,7 +48,7 @@ const C = {
   rose: '#9C6955',
 };
 
-type Tab = 'today' | 'food' | 'move' | 'progress';
+type Tab = 'today' | 'food' | 'move' | 'progress' | 'cycle';
 type UpdateData = (recipe: (current: FitlogData) => FitlogData) => void;
 
 function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
@@ -1440,7 +1440,7 @@ function MoveScreen({ data, update, isActive, selectedDate, onDateChange }: { da
   </ScrollView>;
 }
 
-function ProgressScreen({ data, update, onReset, selectedDate, onDateChange }: { data: FitlogData; update: UpdateData; onReset: () => void; selectedDate: string; onDateChange: (date: string) => void }) {
+function ProgressScreen({ data, update, onReset, onOpenCycle, selectedDate, onDateChange }: { data: FitlogData; update: UpdateData; onReset: () => void; onOpenCycle: () => void; selectedDate: string; onDateChange: (date: string) => void }) {
   const [weight, setWeight] = useState('');
   const [measurementUnit, setMeasurementUnit] = useState<'cm' | 'in'>('cm');
   const [measurementValues, setMeasurementValues] = useState<Record<string, string>>({
@@ -1632,6 +1632,7 @@ function ProgressScreen({ data, update, onReset, selectedDate, onDateChange }: {
         </View>)}
       </>}
       <Text style={{ color: C.muted, fontSize: 10, lineHeight: 15, marginTop: 11 }}>Only your recorded period entries are shown. Cycle averages describe past dates and are not a forecast or contraceptive guidance.</Text>
+      <View style={{ marginTop: 13 }}><ActionButton label="OPEN FULL CYCLE TRACKER  →" onPress={onOpenCycle} tone="soft" /></View>
     </Card>
     <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginBottom: 9 }}>Recent weigh-ins</Text>
     <Card>
@@ -1650,6 +1651,349 @@ function ProgressScreen({ data, update, onReset, selectedDate, onDateChange }: {
       ])} style={{ alignSelf: 'flex-start', paddingVertical: 10, marginTop: 5 }}>
         <Text style={{ color: '#B27D87', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }}>RESET LOCAL APP DATA</Text>
       </TouchableOpacity>
+    </Card>
+  </ScrollView>;
+}
+
+
+type CycleMoodValue = '' | 'very-low' | 'low' | 'neutral' | 'good' | 'very-good';
+type CycleAppetiteValue = '' | 'lower' | 'usual' | 'higher';
+type CycleBloatingValue = '' | 'none' | 'mild' | 'moderate' | 'severe';
+type CycleHormoneType = '' | 'regular_contraception' | 'emergency_contraception' | 'other_hormonal_medication';
+
+function CycleScreen({ data, update, initialDate, onBack }: {
+  data: FitlogData;
+  update: UpdateData;
+  initialDate: string;
+  onBack: () => void;
+}) {
+  const [periodStart, setPeriodStart] = useState(initialDate);
+  const [periodEnd, setPeriodEnd] = useState(initialDate);
+  const [flow, setFlow] = useState<'unspecified' | 'light' | 'medium' | 'heavy'>('unspecified');
+  const [entryDate, setEntryDate] = useState(initialDate);
+  const [mood, setMood] = useState<CycleMoodValue>('');
+  const [appetite, setAppetite] = useState<CycleAppetiteValue>('');
+  const [bloating, setBloating] = useState<CycleBloatingValue>('');
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [cravings, setCravings] = useState<string[]>([]);
+  const [sexualActivity, setSexualActivity] = useState<'not-recorded' | 'yes' | 'no'>('not-recorded');
+  const [contraceptionMethod, setContraceptionMethod] = useState('');
+  const [hormoneType, setHormoneType] = useState<CycleHormoneType>('');
+  const [hormoneName, setHormoneName] = useState('');
+  const [notes, setNotes] = useState('');
+  const [showSensitive, setShowSensitive] = useState(false);
+
+  useEffect(() => {
+    setPeriodStart(initialDate);
+    setPeriodEnd(initialDate);
+    setEntryDate(initialDate);
+  }, [initialDate]);
+
+  const periodEntries = (data.periodCycles ?? []).slice().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const journalEntries = (data.cycleJournal ?? []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const formatCycleDate = (value: string) => new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  }).format(new Date(value + 'T12:00:00'));
+  const validDate = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(value + 'T12:00:00');
+    return !Number.isNaN(parsed.getTime()) && localDateKey(parsed) === value;
+  };
+  const dayDifference = (later: string, earlier: string) => Math.round(
+    (new Date(later + 'T12:00:00').getTime() - new Date(earlier + 'T12:00:00').getTime()) / 86_400_000
+  );
+  const daysInPeriod = (period: NonNullable<FitlogData['periodCycles']>[number]) =>
+    Math.max(1, dayDifference(period.endDate, period.startDate) + 1);
+
+  const savePeriod = () => {
+    if (!validDate(periodStart) || !validDate(periodEnd) || periodEnd < periodStart) {
+      Alert.alert('Check the period dates', 'Enter valid dates in YYYY-MM-DD format. The end date must be on or after the start date.');
+      return;
+    }
+    if (periodEntries.some(item => item.startDate === periodStart)) {
+      Alert.alert('Period already recorded', 'A period with this start date is already in your history. Remove the existing manual entry instead of adding a duplicate.');
+      return;
+    }
+    const entry = {
+      id: makeId(),
+      startDate: periodStart,
+      endDate: periodEnd,
+      flow,
+      source: 'manual' as const,
+      healthKitSampleIds: [],
+    };
+    update(current => ({ ...current, periodCycles: [...(current.periodCycles ?? []), entry] }));
+    setPeriodStart(initialDate);
+    setPeriodEnd(initialDate);
+    setFlow('unspecified');
+    Alert.alert('Period dates saved', 'Your period entry has been stored on this iPhone.');
+  };
+
+  const clearJournalForm = () => {
+    setMood('');
+    setAppetite('');
+    setBloating('');
+    setSymptoms([]);
+    setCravings([]);
+    setSexualActivity('not-recorded');
+    setContraceptionMethod('');
+    setHormoneType('');
+    setHormoneName('');
+    setNotes('');
+    setShowSensitive(false);
+  };
+
+  const toggleValue = (values: string[], value: string, setValues: (next: string[]) => void) => {
+    setValues(values.includes(value) ? values.filter(item => item !== value) : [...values, value]);
+  };
+
+  const saveJournal = () => {
+    if (!validDate(entryDate)) {
+      Alert.alert('Check the log date', 'Enter a valid date in YYYY-MM-DD format.');
+      return;
+    }
+    const hasContent = Boolean(mood || appetite || bloating || symptoms.length || cravings.length ||
+      sexualActivity !== 'not-recorded' || contraceptionMethod.trim() || (hormoneType && hormoneName.trim()) || notes.trim());
+    if (!hasContent) {
+      Alert.alert('Nothing to save yet', 'Choose at least one optional check-in item. You can leave every other field blank.');
+      return;
+    }
+    const existing = (data.cycleJournal ?? []).find(item => item.date === entryDate);
+    const entry = {
+      id: existing?.id ?? makeId(),
+      date: entryDate,
+      ...(mood ? { mood } : {}),
+      ...(appetite ? { appetite } : {}),
+      ...(bloating ? { bloating } : {}),
+      ...(symptoms.length ? { symptoms } : {}),
+      ...(cravings.length ? { cravings } : {}),
+      ...(sexualActivity !== 'not-recorded' ? { sexualActivity } : {}),
+      ...(contraceptionMethod.trim() ? { contraceptionMethod: contraceptionMethod.trim() } : {}),
+      ...(hormoneType && hormoneName.trim() ? { hormonalMedicationType: hormoneType, hormonalMedicationName: hormoneName.trim() } : {}),
+      ...(notes.trim() ? { notes: notes.trim() } : {}),
+    };
+    update(current => ({
+      ...current,
+      cycleJournal: [...(current.cycleJournal ?? []).filter(item => item.date !== entryDate), entry],
+    }));
+    clearJournalForm();
+    Alert.alert(existing ? 'Daily check-in updated' : 'Daily check-in saved', 'Your optional cycle notes are stored locally.');
+  };
+
+  const editJournal = (entry: NonNullable<FitlogData['cycleJournal']>[number]) => {
+    setEntryDate(entry.date);
+    setMood(entry.mood ?? '');
+    setAppetite(entry.appetite ?? '');
+    setBloating(entry.bloating ?? '');
+    setSymptoms(entry.symptoms ?? []);
+    setCravings(entry.cravings ?? []);
+    setSexualActivity(entry.sexualActivity ?? 'not-recorded');
+    setContraceptionMethod(entry.contraceptionMethod ?? '');
+    setHormoneType(entry.hormonalMedicationType ?? '');
+    setHormoneName(entry.hormonalMedicationName ?? '');
+    setNotes(entry.notes ?? '');
+    setShowSensitive(true);
+  };
+
+  const removeJournal = (date: string) => Alert.alert('Delete this private check-in?', 'This removes the selected day from your local cycle journal.', [
+    { text: 'Keep it', style: 'cancel' },
+    { text: 'Delete', style: 'destructive', onPress: () => update(current => ({
+      ...current,
+      cycleJournal: (current.cycleJournal ?? []).filter(item => item.date !== date),
+    })) },
+  ]);
+  const removeManualPeriod = (id: string) => Alert.alert('Remove this period entry?', 'This only removes the manual period record from Fitlog. Apple Health records are not changed.', [
+    { text: 'Keep it', style: 'cancel' },
+    { text: 'Remove', style: 'destructive', onPress: () => update(current => ({
+      ...current,
+      periodCycles: (current.periodCycles ?? []).filter(item => item.id !== id),
+    })) },
+  ]);
+
+  const moodScores: Record<Exclude<CycleMoodValue, ''>, number> = {
+    'very-low': 1, low: 2, neutral: 3, good: 4, 'very-good': 5,
+  };
+  const bloatingScores: Record<Exclude<CycleBloatingValue, ''>, number> = {
+    none: 0, mild: 1, moderate: 2, severe: 3,
+  };
+  const classified = journalEntries.map(entry => {
+    let phase: 'before' | 'period' | 'other' = 'other';
+    let closestDistance = Infinity;
+    for (const period of periodEntries) {
+      const offset = dayDifference(entry.date, period.startDate);
+      const inWindow = offset >= -5 && offset < daysInPeriod(period);
+      if (inWindow && Math.abs(offset) < closestDistance) {
+        closestDistance = Math.abs(offset);
+        phase = offset < 0 ? 'before' : 'period';
+      }
+    }
+    return { entry, phase };
+  });
+  const mean = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  const patternNotes: string[] = [];
+  const beforeMood = classified.filter(item => item.phase === 'before' && item.entry.mood).map(item => moodScores[item.entry.mood as Exclude<CycleMoodValue, ''>]);
+  const otherMood = classified.filter(item => item.phase === 'other' && item.entry.mood).map(item => moodScores[item.entry.mood as Exclude<CycleMoodValue, ''>]);
+  if (beforeMood.length >= 3 && otherMood.length >= 3) {
+    const a = mean(beforeMood)!;
+    const b = mean(otherMood)!;
+    if (Math.abs(a - b) >= 0.5) {
+      patternNotes.push('Your logged mood score averaged ' + a.toFixed(1) + ' in the five days before a recorded period and ' + b.toFixed(1) + ' on other logged days.');
+    }
+  }
+  const beforeDays = classified.filter(item => item.phase === 'before');
+  const otherDays = classified.filter(item => item.phase === 'other');
+  const beforeCravings = beforeDays.length ? beforeDays.filter(item => (item.entry.cravings?.length ?? 0) > 0).length / beforeDays.length : null;
+  const otherCravings = otherDays.length ? otherDays.filter(item => (item.entry.cravings?.length ?? 0) > 0).length / otherDays.length : null;
+  if (beforeCravings != null && otherCravings != null &&
+      beforeDays.length >= 3 && otherDays.length >= 3 &&
+      Math.abs(beforeCravings - otherCravings) >= 0.2) {
+    patternNotes.push('Cravings were logged on ' + (beforeCravings * 100).toFixed(0) + '% of pre-period check-in days versus ' + (otherCravings * 100).toFixed(0) + '% of other logged days.');
+  }
+  const periodBloating = classified.filter(item => (item.phase === 'before' || item.phase === 'period') && item.entry.bloating)
+    .map(item => bloatingScores[item.entry.bloating as Exclude<CycleBloatingValue, ''>]);
+  const otherBloating = classified.filter(item => item.phase === 'other' && item.entry.bloating)
+    .map(item => bloatingScores[item.entry.bloating as Exclude<CycleBloatingValue, ''>]);
+  if (periodBloating.length >= 3 && otherBloating.length >= 3) {
+    const a = mean(periodBloating)!;
+    const b = mean(otherBloating)!;
+    if (Math.abs(a - b) >= 0.5) {
+      patternNotes.push('Your bloating score averaged ' + a.toFixed(1) + ' around recorded periods and ' + b.toFixed(1) + ' on other logged days.');
+    }
+  }
+
+  const orderedPeriods = periodEntries.slice().sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const intervals = orderedPeriods.slice(1).map((item, index) => dayDifference(item.startDate, orderedPeriods[index].startDate)).filter(days => days > 0 && days < 100);
+  const averageCycleInterval = mean(intervals);
+
+  const symptomOptions = ['Cramps', 'Headache', 'Fatigue', 'Acne', 'Breast tenderness', 'Nausea', 'Low back pain', 'Bowel changes'];
+  const cravingOptions = ['Chocolate', 'Sweet', 'Salty', 'Carbs', 'Comfort food'];
+  const moodOptions: { value: Exclude<CycleMoodValue, ''>; label: string }[] = [
+    { value: 'very-low', label: 'Very low' }, { value: 'low', label: 'Low' }, { value: 'neutral', label: 'Neutral' },
+    { value: 'good', label: 'Good' }, { value: 'very-good', label: 'Very good' },
+  ];
+
+  return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
+    <View style={{ marginBottom: 18 }}>
+      <TouchableOpacity onPress={onBack} style={{ alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, backgroundColor: C.lilac, marginBottom: 15 }}>
+        <Text style={{ color: C.accent, fontSize: 11, fontWeight: '900' }}>← BACK TO PROGRESS</Text>
+      </TouchableOpacity>
+      <PageTitle eyebrow="REPRODUCTIVE HEALTH  ✳  PRIVATE JOURNAL" title="Cycle tracker 🌸" subtitle="Log only what feels useful. You can backfill earlier dates, edit entries and delete them at any time." />
+    </View>
+
+    <Card style={{ backgroundColor: '#FFF5F7', borderColor: '#F0DEE5' }}>
+      <Text style={{ color: C.text, fontWeight: '900', fontSize: 18 }}>Period history</Text>
+      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }}>Enter historical start and end dates manually. HealthKit imports remain labelled separately.</Text>
+      <TextField label="Period start date" value={periodStart} onChange={setPeriodStart} placeholder="YYYY-MM-DD" />
+      <TextField label="Period end date" value={periodEnd} onChange={setPeriodEnd} placeholder="YYYY-MM-DD" />
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', marginBottom: 8 }}>FLOW (OPTIONAL)</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {(['unspecified', 'light', 'medium', 'heavy'] as const).map(value =>
+          <Chip key={value} label={value === 'unspecified' ? 'Not set' : value[0].toUpperCase() + value.slice(1)} selected={flow === value} onPress={() => setFlow(value)} />
+        )}
+      </View>
+      <ActionButton label="SAVE PERIOD DATES  +" onPress={savePeriod} />
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 15, marginTop: 9 }}>Dates use your iPhone's local calendar. This tracker does not forecast ovulation or provide contraceptive guidance.</Text>
+    </Card>
+
+    <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 9 }}>Recorded periods</Text>
+    <Card>
+      {periodEntries.length === 0 ? <EmptyState emoji="🌷" title="No period dates yet" subtitle="Add a period above, or import a record through Apple Health." /> :
+        periodEntries.slice(0, 12).map(item => <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3E5EA' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.text, fontWeight: '900', fontSize: 12 }}>{formatCycleDate(item.startDate)} – {formatCycleDate(item.endDate)}</Text>
+            <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{daysInPeriod(item)} days · {item.source === 'healthkit' ? 'Apple Health' : 'Manual entry'}</Text>
+          </View>
+          <Text style={{ color: C.rose, fontSize: 10, fontWeight: '900', textTransform: 'capitalize' }}>{item.flow}</Text>
+          {item.source === 'manual' && <TouchableOpacity onPress={() => removeManualPeriod(item.id)} style={{ marginLeft: 10, padding: 5 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>}
+        </View>)}
+    </Card>
+
+    <Card>
+      <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginBottom: 5 }}>Daily body & mood check-in</Text>
+      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginBottom: 12 }}>Choose a past or current date. Leave any category blank if you don't want to track it.</Text>
+      <TextField label="Check-in date" value={entryDate} onChange={setEntryDate} placeholder="YYYY-MM-DD" />
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', marginBottom: 7 }}>MOOD</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {moodOptions.map(option => <Chip key={option.value} label={option.label} selected={mood === option.value} onPress={() => setMood(mood === option.value ? '' : option.value)} />)}
+      </View>
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', marginTop: 8, marginBottom: 7 }}>APPETITE</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {([{ value: 'lower', label: 'Lower' }, { value: 'usual', label: 'Usual' }, { value: 'higher', label: 'Higher' }] as const).map(option =>
+          <Chip key={option.value} label={option.label} selected={appetite === option.value} onPress={() => setAppetite(appetite === option.value ? '' : option.value)} />
+        )}
+      </View>
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', marginTop: 8, marginBottom: 7 }}>BLOATING</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {([{ value: 'none', label: 'None' }, { value: 'mild', label: 'Mild' }, { value: 'moderate', label: 'Moderate' }, { value: 'severe', label: 'Severe' }] as const).map(option =>
+          <Chip key={option.value} label={option.label} selected={bloating === option.value} onPress={() => setBloating(bloating === option.value ? '' : option.value)} />
+        )}
+      </View>
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', marginTop: 8, marginBottom: 7 }}>SYMPTOMS</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {symptomOptions.map(value => <Chip key={value} label={value} selected={symptoms.includes(value)} onPress={() => toggleValue(symptoms, value, setSymptoms)} />)}
+      </View>
+      <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', marginTop: 8, marginBottom: 7 }}>CRAVINGS</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {cravingOptions.map(value => <Chip key={value} label={value} selected={cravings.includes(value)} onPress={() => toggleValue(cravings, value, setCravings)} />)}
+      </View>
+
+      <TouchableOpacity onPress={() => setShowSensitive(value => !value)} style={{ marginTop: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={{ color: C.rose, fontWeight: '900', fontSize: 12 }}>OPTIONAL · SEXUAL ACTIVITY & MEDICATION</Text>
+        <Text style={{ color: C.rose, fontWeight: '900' }}>{showSensitive ? '−' : '+'}</Text>
+      </TouchableOpacity>
+      {showSensitive && <View style={{ backgroundColor: '#FFF7F8', borderRadius: 15, padding: 12, marginBottom: 12 }}>
+        <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', marginBottom: 7 }}>SEXUAL ACTIVITY</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          <Chip label="Not recorded" selected={sexualActivity === 'not-recorded'} onPress={() => setSexualActivity('not-recorded')} />
+          <Chip label="Yes" selected={sexualActivity === 'yes'} onPress={() => setSexualActivity('yes')} />
+          <Chip label="No" selected={sexualActivity === 'no'} onPress={() => setSexualActivity('no')} />
+        </View>
+        <TextField label="Contraception method (optional)" value={contraceptionMethod} onChange={setContraceptionMethod} placeholder="e.g. condom, pill, IUD" />
+        <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', marginBottom: 7 }}>HORMONAL MEDICATION / CONTRACEPTION EVENT</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          <Chip label="Regular contraception" selected={hormoneType === 'regular_contraception'} onPress={() => setHormoneType(hormoneType === 'regular_contraception' ? '' : 'regular_contraception')} />
+          <Chip label="Emergency contraception" selected={hormoneType === 'emergency_contraception'} onPress={() => setHormoneType(hormoneType === 'emergency_contraception' ? '' : 'emergency_contraception')} />
+          <Chip label="Other hormone medication" selected={hormoneType === 'other_hormonal_medication'} onPress={() => setHormoneType(hormoneType === 'other_hormonal_medication' ? '' : 'other_hormonal_medication')} />
+        </View>
+        {hormoneType !== '' && <TextField label="Medication / method name" value={hormoneName} onChange={setHormoneName} placeholder="Optional name" />}
+        <Text style={{ color: C.muted, fontSize: 10, lineHeight: 15 }}>These fields are optional. They stay in Fitlog's encrypted local journal and are not sent to an AI service.</Text>
+      </View>}
+      <TextField label="Private note (optional)" value={notes} onChange={setNotes} placeholder="Anything you want to remember" />
+      <ActionButton label="SAVE DAILY CHECK-IN  ✓" onPress={saveJournal} />
+    </Card>
+
+    <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 9 }}>Your daily log</Text>
+    <Card>
+      {journalEntries.length === 0 ? <EmptyState emoji="🌱" title="No daily notes yet" subtitle="You can start with just mood, bloating or one symptom." /> :
+        journalEntries.slice(0, 10).map(entry => <View key={entry.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: C.text, fontWeight: '900', fontSize: 12 }}>{formatCycleDate(entry.date)}</Text>
+              <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 4 }}>
+                {[entry.mood?.replace('-', ' '), entry.appetite ? 'appetite ' + entry.appetite : '', entry.bloating ? 'bloating ' + entry.bloating : '', ...(entry.symptoms ?? []), ...(entry.cravings ?? []).map(value => value + ' craving')].filter(Boolean).join(' · ') || 'Private note'}
+              </Text>
+              {(entry.sexualActivity || entry.contraceptionMethod || entry.hormonalMedicationName) && <Text style={{ color: C.rose, fontSize: 9, marginTop: 4 }}>Contains private sexual-health / medication details</Text>}
+            </View>
+            <TouchableOpacity onPress={() => editJournal(entry)} style={{ padding: 6 }}><Text style={{ color: C.accent, fontWeight: '900', fontSize: 10 }}>EDIT</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => removeJournal(entry.date)} style={{ padding: 6 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>
+          </View>
+        </View>)}
+    </Card>
+
+    <Card style={{ backgroundColor: C.lilac }}>
+      <Text style={{ color: C.text, fontSize: 17, fontWeight: '900' }}>Patterns from your entries ✨</Text>
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 15, marginTop: 5 }}>These are simple local comparisons of your own check-ins around recorded period dates, not diagnoses or proof that hormones caused a symptom.</Text>
+      {periodEntries.length < 2 || journalEntries.length < 8
+        ? <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 10 }}>Keep logging at your own pace. Patterns need at least two recorded period starts and eight daily check-ins before Fitlog compares phases.</Text>
+        : patternNotes.length === 0
+          ? <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 10 }}>There isn't enough repeated information in the current logs to highlight a pattern yet. That is okay; no pattern is also useful.</Text>
+          : patternNotes.map((note, index) => <Text key={index} style={{ color: C.text, fontSize: 11, lineHeight: 18, marginTop: 9 }}>• {note}</Text>)}
+      <Text style={{ color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 10 }}>Fitlog does not infer fertility, predict ovulation, assess pregnancy risk or recommend contraception. Cycle timing can vary for many reasons, including medication and stress.</Text>
+    </Card>
+
+    <Card style={{ backgroundColor: C.mint, borderColor: '#D8E9DC' }}>
+      <Text style={{ color: C.text, fontWeight: '900' }}>Your cycle data stays yours 🔐</Text>
+      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }}>Cycle, sexual-activity and medication entries are saved in Fitlog's encrypted on-device database. No cycle data is sent to an AI service. You can edit or delete individual records.</Text>
     </Card>
   </ScrollView>;
 }
@@ -1722,14 +2066,15 @@ export default function App() {
           {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} selectedDate={selectedDate} onDateChange={setSelectedDate} />}
           {tab === 'food' && <FoodScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} />}
           <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} isActive={tab === 'move'} selectedDate={selectedDate} onDateChange={setSelectedDate} /></View>
-          {tab === 'progress' && <ProgressScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} onReset={() => {
+          {tab === 'cycle' && <CycleScreen data={data} update={update} initialDate={selectedDate} onBack={() => setTab('progress')} />}
+          {tab === 'progress' && <ProgressScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} onOpenCycle={() => setTab('cycle')} onReset={() => {
             clearFitlogData()
               .then(() => { setData(null); setSelectedDate(localDateKey()); setTab('today'); })
               .catch(() => Alert.alert('Could not reset', 'Please try again after checking your device storage.'));
           }} />}
           {saveFailed && <Text style={{ color: '#A45F60', fontSize: 10, textAlign: 'center', paddingVertical: 4 }}>Could not save changes to this iPhone. Check available storage.</Text>}
         </View>
-        <TabBar selected={tab} onSelect={setTab} />
+        <TabBar selected={tab === 'cycle' ? 'progress' : tab} onSelect={setTab} />
       </>}
     </SafeAreaView>
   </SafeAreaProvider>;
