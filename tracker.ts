@@ -61,8 +61,24 @@ export type PeriodCycleEntry = {
   startDate: string;
   endDate: string;
   flow: 'unspecified' | 'light' | 'medium' | 'heavy';
-  source: 'healthkit';
+  source: 'healthkit' | 'manual';
   healthKitSampleIds: string[];
+};
+
+export type CycleMood = 'very-low' | 'low' | 'neutral' | 'good' | 'very-good';
+export type CycleJournalEntry = {
+  id: string;
+  date: string;
+  mood?: CycleMood;
+  appetite?: 'lower' | 'usual' | 'higher';
+  bloating?: 'none' | 'mild' | 'moderate' | 'severe';
+  symptoms?: string[];
+  cravings?: string[];
+  sexualActivity?: 'yes' | 'no';
+  contraceptionMethod?: string;
+  hormonalMedicationType?: 'regular_contraception' | 'emergency_contraception' | 'other_hormonal_medication';
+  hormonalMedicationName?: string;
+  notes?: string;
 };
 
 export type MeasurementEntry = {
@@ -110,6 +126,7 @@ export type FitlogData = {
   waterByDate: Record<string, number>;
   activityByDate?: Record<string, DailyActivityEntry>;
   periodCycles?: PeriodCycleEntry[];
+  cycleJournal?: CycleJournalEntry[];
   healthSync?: {
     setupRequested: boolean;
     lastSyncAt?: number;
