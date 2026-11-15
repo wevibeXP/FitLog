@@ -15,7 +15,7 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 - Expanded searchable offline food catalogue covering everyday South Indian and Indian meals, staples, ingredients, vegetables, fruits, drinks, dairy, snacks and protein sources, with portion-based calorie and macro estimates.
 - Multi-ingredient meal builder so a meal such as eggs + toast can be totalled together.
 - Optional manual nutrition fallback for foods and homemade recipes not yet in the catalogue.
-- Editable saved food entries with manually corrected calories and macros.
+- Editable saved food entries and pre-save meal totals, with manual corrections for calories and macros.
 - Ingredient-level portion review before a meal is saved, with saved ingredient nutrition and estimate provenance.
 - Movement log for strength, Pilates, walking, running, cycling and mobility.
 - Shared day navigation across Today, Food and Move to review and log historical daily entries; future dates are disabled.
