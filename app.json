@@ -14,7 +14,8 @@
       "buildNumber": "5",
       "infoPlist": {
         "NSMotionUsageDescription": "Fitlog uses motion sensors to count your steps and measure walking distance, pace and floors climbed. Motion readings are processed on your iPhone."
-      }
+      },
+      "deploymentTarget": "16.4"
     },
     "plugins": [
       [
