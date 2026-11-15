@@ -882,6 +882,10 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
           const capabilities = FitlogMotion.getCapabilities();
           if (!mounted) return;
           setDailyMotionCapabilities(capabilities);
+          if (!capabilities.stepCounting) {
+            setDailyPedometerStatus('unavailable');
+            return;
+          }
           if (capabilities.authorizationStatus !== 'authorized') {
             setDailyPedometerStatus(
               capabilities.authorizationStatus === 'denied' || capabilities.authorizationStatus === 'restricted'
