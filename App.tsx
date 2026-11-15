@@ -1297,7 +1297,7 @@ function MoveScreen({ data, update, isActive, selectedDate, onDateChange }: { da
   </ScrollView>;
 }
 
-function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: UpdateData; onReset: () => void }) {
+function ProgressScreen({ data, update, onReset, selectedDate, onDateChange }: { data: FitlogData; update: UpdateData; onReset: () => void; selectedDate: string; onDateChange: (date: string) => void }) {
   const [weight, setWeight] = useState('');
   const [measurementUnit, setMeasurementUnit] = useState<'cm' | 'in'>('cm');
   const [measurementValues, setMeasurementValues] = useState<Record<string, string>>({
@@ -1306,7 +1306,7 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
     leftForearmCm: '', rightForearmCm: '', leftCalfCm: '', rightCalfCm: '', neckCm: '',
   });
   const [sleep, setSleep] = useState('');
-  const date = localDateKey();
+  const date = selectedDate;
   const measurementFields: { key: string; label: string }[] = [
     { key: 'bustCm', label: 'Bust / chest' },
     { key: 'underbustCm', label: 'Underbust' },
@@ -1325,7 +1325,7 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
     { key: 'neckCm', label: 'Neck' },
   ];
   const changeMeasurement = (key: string, value: string) => setMeasurementValues(current => ({ ...current, [key]: value }));
-  const sortedWeights = data.weights.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  const sortedWeights = data.weights.filter(item => item.date <= date).slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   const latest = sortedWeights[0];
   const previous = sortedWeights.find(item => item.id !== latest?.id);
   const addWeight = () => {
@@ -1374,9 +1374,9 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
     update(current => ({ ...current, sleep: [...current.sleep, { id: makeId(), date, hours }] }));
     setSleep('');
   };
-  const lastMeasurements = data.measurements.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
-  const lastSleep = data.sleep.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
-  const periodCycles = (data.periodCycles ?? []).slice().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const measurementsThroughDate = data.measurements.filter(item => item.date <= date).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const lastSleep = data.sleep.filter(item => item.date <= date).slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  const periodCycles = (data.periodCycles ?? []).filter(item => item.startDate <= date).slice().sort((a, b) => b.startDate.localeCompare(a.startDate));
   const cycleStartsAscending = periodCycles.map(item => item.startDate).sort();
   const cycleIntervals = cycleStartsAscending.slice(1).map((start, index) => {
     const earlier = new Date(cycleStartsAscending[index] + 'T12:00:00');
@@ -1395,6 +1395,7 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
 
   return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
     <PageTitle eyebrow="YOUR CHECK-INS  ✳  PROGRESS, NOT PERFECTION" title="Notice your growth 🌷" subtitle="A few calm check-ins help you notice longer-term patterns. No daily judgement, no pressure." />
+    <DateNavigator selectedDate={selectedDate} onChange={onDateChange} />
     <Card style={{ backgroundColor: C.lilac }}>
       <Eyebrow>YOUR WEIGHT CHECK-IN</Eyebrow>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }}>
@@ -1439,8 +1440,8 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
     </Card>
     <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginBottom: 9 }}>Measurement history</Text>
     <Card>
-      {data.measurements.length === 0 ? <EmptyState emoji="🌿" title="Your first measurements will live here" subtitle="You can create a check-in with just one measurement or a full set." /> :
-        data.measurements.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5).map(entry => {
+      {measurementsThroughDate.length === 0 ? <EmptyState emoji="🌿" title="Your first measurements will live here" subtitle="You can create a check-in with just one measurement or a full set." /> :
+        measurementsThroughDate.slice(0, 5).map(entry => {
           const measurementRecord = entry as unknown as Record<string, unknown>;
           const values = measurementFields
             .filter(field => measurementRecord[field.key] !== undefined)
@@ -1562,7 +1563,7 @@ export default function App() {
           {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} selectedDate={selectedDate} onDateChange={setSelectedDate} />}
           {tab === 'food' && <FoodScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} />}
           <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} isActive={tab === 'move'} selectedDate={selectedDate} onDateChange={setSelectedDate} /></View>
-          {tab === 'progress' && <ProgressScreen data={data} update={update} onReset={() => {
+          {tab === 'progress' && <ProgressScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} onReset={() => {
             AsyncStorage.removeItem(STORAGE_KEY)
               .then(() => { setData(null); setTab('today'); })
               .catch(() => Alert.alert('Could not reset', 'Please try again after checking your device storage.'));
