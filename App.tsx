@@ -624,12 +624,133 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
 }
 function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('Strength');
+  const [category, setCategory] = useState('Walk');
   const [minutes, setMinutes] = useState('');
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [sessionElapsedSeconds, setSessionElapsedSeconds] = useState(0);
+  const [sessionSteps, setSessionSteps] = useState(0);
+  const [motionStats, setMotionStats] = useState({ samples: 0, rms: 0 });
+  const [motionSessionMessage, setMotionSessionMessage] = useState('');
+  const motionSubscription = useRef<{ remove: () => void } | null>(null);
+  const pedometerSubscription = useRef<{ remove: () => void } | null>(null);
+  const motionAccumulator = useRef({ samples: 0, sumSquares: 0 });
   const date = localDateKey();
   const options = ['Strength', 'Pilates', 'Walk', 'Run', 'Cycling', 'Mobility', 'Other'];
   const todays = data.workouts.filter(item => item.date === date);
   const totalMinutes = todays.reduce((sum, item) => sum + item.minutes, 0);
+
+  useEffect(() => {
+    if (sessionStartedAt == null) return;
+    const interval = setInterval(() => {
+      setSessionElapsedSeconds(Math.floor((Date.now() - sessionStartedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sessionStartedAt]);
+
+  useEffect(() => () => {
+    motionSubscription.current?.remove();
+    pedometerSubscription.current?.remove();
+  }, []);
+
+  const startMotionSession = async () => {
+    if (sessionStartedAt != null) return;
+    try {
+      const available = await DeviceMotion.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Motion sensor unavailable', 'This device cannot provide live motion data. You can still use the manual workout logger.');
+        return;
+      }
+
+      let canCountSteps = false;
+      try {
+        if (await Pedometer.isAvailableAsync()) {
+          let permission = await Pedometer.getPermissionsAsync();
+          if (!permission.granted && permission.canAskAgain) permission = await Pedometer.requestPermissionsAsync();
+          canCountSteps = permission.granted;
+        }
+      } catch {
+        canCountSteps = false;
+      }
+
+      motionAccumulator.current = { samples: 0, sumSquares: 0 };
+      setMotionStats({ samples: 0, rms: 0 });
+      setSessionSteps(0);
+      setSessionElapsedSeconds(0);
+      setMotionSessionMessage(canCountSteps
+        ? 'Live motion and step sampling are running. Keep your phone with you.'
+        : 'Motion sampling is running. Step access was unavailable, so this session will not include step counts.');
+
+      DeviceMotion.setUpdateInterval(100);
+      motionSubscription.current = DeviceMotion.addListener(({ acceleration }) => {
+        if (!acceleration) return;
+        const magnitude = Math.sqrt(
+          acceleration.x * acceleration.x +
+          acceleration.y * acceleration.y +
+          acceleration.z * acceleration.z
+        );
+        const accumulator = motionAccumulator.current;
+        accumulator.samples += 1;
+        accumulator.sumSquares += magnitude * magnitude;
+        if (accumulator.samples % 10 === 0) {
+          setMotionStats({
+            samples: accumulator.samples,
+            rms: Math.sqrt(accumulator.sumSquares / accumulator.samples),
+          });
+        }
+      });
+
+      if (canCountSteps) {
+        pedometerSubscription.current = Pedometer.watchStepCount(result => setSessionSteps(result.steps));
+      }
+      setSessionStartedAt(Date.now());
+    } catch (error) {
+      motionSubscription.current?.remove();
+      pedometerSubscription.current?.remove();
+      motionSubscription.current = null;
+      pedometerSubscription.current = null;
+      Alert.alert('Could not start motion session', error instanceof Error ? error.message : 'Please try again.');
+    }
+  };
+
+  const stopMotionSession = () => {
+    if (sessionStartedAt == null) return;
+    const endedAt = Date.now();
+    const elapsedSeconds = Math.max(1, Math.floor((endedAt - sessionStartedAt) / 1000));
+    const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const accumulator = motionAccumulator.current;
+    const rms = accumulator.samples > 0
+      ? Math.sqrt(accumulator.sumSquares / accumulator.samples)
+      : undefined;
+    const cadenceSpm = sessionSteps > 0
+      ? Math.round(sessionSteps / (elapsedSeconds / 60))
+      : undefined;
+    const item: WorkoutEntry = {
+      id: makeId(),
+      date: localDateKey(new Date(sessionStartedAt)),
+      name: name.trim() || category + ' session',
+      category,
+      minutes: durationMinutes,
+      createdAt: sessionStartedAt,
+      source: 'motion',
+      steps: sessionSteps > 0 ? sessionSteps : undefined,
+      cadenceSpm,
+      averageMotionMps2: rms != null ? Math.round(rms * 100) / 100 : undefined,
+      motionSamples: accumulator.samples,
+    };
+
+    motionSubscription.current?.remove();
+    pedometerSubscription.current?.remove();
+    motionSubscription.current = null;
+    pedometerSubscription.current = null;
+    update(current => ({ ...current, workouts: [...current.workouts, item] }));
+    setSessionStartedAt(null);
+    setSessionElapsedSeconds(0);
+    setSessionSteps(0);
+    setMotionStats({ samples: 0, rms: 0 });
+    setMotionSessionMessage('Session saved. Fitlog stores the summary, not the raw motion stream.');
+    Alert.alert('Movement session saved 🌱', item.minutes + ' min' + (item.steps != null ? ' · ' + item.steps.toLocaleString('en-IN') + ' steps' : '') + '. No exercise calories were estimated.');
+  };
+
   const addWorkout = () => {
     const duration = Number(minutes);
     if (!name.trim() || !Number.isFinite(duration) || duration <= 0) {
@@ -645,8 +766,11 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
     { text: 'Remove', style: 'destructive', onPress: () => update(current => ({ ...current, workouts: current.workouts.filter(item => item.id !== id) })) },
   ]);
 
+  const timerLabel = String(Math.floor(sessionElapsedSeconds / 60)).padStart(2, '0') + ':' +
+    String(sessionElapsedSeconds % 60).padStart(2, '0');
+
   return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
-    <PageTitle eyebrow="MOVEMENT JOURNAL  ✳  YOUR PACE, YOUR WAY" title="Move a little 🌱" subtitle="Strength, Pilates, running, walks or a stretch break. It all counts as movement." />
+    <PageTitle eyebrow="MOVEMENT JOURNAL  ✳  YOUR PACE, YOUR WAY" title="Move a little 🌱" subtitle="Use your iPhone’s motion sensors during a session, or add a workout manually." />
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Card style={{ flex: 1, backgroundColor: C.mint }}>
         <Text style={{ fontSize: 21 }}>🌼</Text>
@@ -660,21 +784,55 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
       </Card>
     </View>
     <Card>
-      <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 15 }}>Log a session</Text>
-      <Text style={{ color: C.muted, fontSize: 11, fontWeight: '800', marginBottom: 9 }}>WHAT DID YOU DO?</Text>
+      <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 15 }}>Choose your movement</Text>
+      <Text style={{ color: C.muted, fontSize: 11, fontWeight: '800', marginBottom: 9 }}>WHAT ARE YOU DOING?</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {options.map(option => <Chip key={option} label={option} selected={category === option} onPress={() => setCategory(option)} />)}
+        {options.map(option => <Chip key={option} label={option} selected={category === option} onPress={() => { if (sessionStartedAt == null) setCategory(option); }} />)}
       </View>
-      <TextField label="Activity" value={name} onChange={setName} placeholder={category === 'Strength' ? 'e.g. Upper body session' : 'e.g. Evening walk'} />
+      <TextField label="Activity name (optional for live sessions)" value={name} onChange={setName} placeholder={category === 'Strength' ? 'e.g. Upper body session' : 'e.g. Evening walk'} />
+      <Card style={{ backgroundColor: '#F2ECFB', borderColor: '#E6DDF4', marginBottom: 0 }}>
+        <Eyebrow>LIVE IPHONE MOTION SESSION</Eyebrow>
+        <Text style={{ color: C.text, fontSize: 17, fontWeight: '900', marginTop: 5 }}>{sessionStartedAt != null ? 'Session in progress' : 'Capture a movement session'}</Text>
+        <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }}>{sessionStartedAt != null ? 'Keep Fitlog open and carry your phone as you move.' : 'Start when you begin. Fitlog records elapsed time, available steps and a summary of the device motion signal.'}</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 13 }}>
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 13, padding: 10 }}>
+            <Text style={{ color: C.muted, fontSize: 9, fontWeight: '900' }}>TIME</Text>
+            <Text style={{ color: C.text, fontSize: 21, fontWeight: '900', marginTop: 4 }}>{timerLabel}</Text>
+          </View>
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 13, padding: 10 }}>
+            <Text style={{ color: C.muted, fontSize: 9, fontWeight: '900' }}>SESSION STEPS</Text>
+            <Text style={{ color: C.text, fontSize: 21, fontWeight: '900', marginTop: 4 }}>{sessionSteps.toLocaleString('en-IN')}</Text>
+          </View>
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 13, padding: 10 }}>
+            <Text style={{ color: C.muted, fontSize: 9, fontWeight: '900' }}>MOTION RMS</Text>
+            <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 6 }}>{motionStats.rms.toFixed(2)}</Text>
+            <Text style={{ color: C.muted, fontSize: 8 }}>m/s²</Text>
+          </View>
+        </View>
+        <Text style={{ color: C.muted, fontSize: 10, marginTop: 8 }}>{motionStats.samples.toLocaleString('en-IN')} motion samples summarized · {sessionSteps > 0 ? Math.round(sessionSteps / Math.max(sessionElapsedSeconds / 60, 1)) + ' steps/min so far' : 'waiting for steps'}</Text>
+        <View style={{ marginTop: 12 }}>
+          <ActionButton
+            label={sessionStartedAt != null ? 'END & SAVE SESSION' : 'START LIVE SESSION'}
+            onPress={sessionStartedAt != null ? stopMotionSession : startMotionSession}
+          />
+        </View>
+        {motionSessionMessage !== '' && <Text style={{ color: C.muted, fontSize: 10, lineHeight: 15, marginTop: 9 }}>{motionSessionMessage}</Text>}
+        <Text style={{ color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 8 }}>Motion RMS is an experimental signal, not a validated exercise-intensity or calorie estimate. It changes with phone placement. Raw samples stay in memory and are not saved.</Text>
+      </Card>
+      <Text style={{ color: C.muted, fontSize: 10, marginTop: 12 }}>Prefer not to use sensors? Add a timed session manually.</Text>
       <TextField label="Duration" value={minutes} onChange={setMinutes} placeholder="e.g. 35" keyboardType="decimal-pad" suffix="minutes" />
-      <ActionButton label="SAVE MOVEMENT  +" onPress={addWorkout} />
+      <ActionButton label="SAVE MANUAL MOVEMENT  +" onPress={addWorkout} tone="soft" />
     </Card>
     <Text style={{ color: C.text, fontSize: 19, fontWeight: '900', marginBottom: 10 }}>Today's movement</Text>
     <Card>
       {todays.length === 0 ? <EmptyState emoji="🧘‍♀️" title="No sessions logged yet" subtitle="Rest days count too. Add movement only when it happens." /> :
         todays.slice().reverse().map(item => <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#F4EEF3' }}>
           <View style={{ width: 40, height: 40, backgroundColor: C.lilac, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 11 }}><Text style={{ fontSize: 18 }}>{item.category === 'Strength' ? '🏋️' : item.category === 'Pilates' ? '🧘' : item.category === 'Run' ? '🏃' : item.category === 'Walk' ? '🚶' : '🌿'}</Text></View>
-          <View style={{ flex: 1 }}><Text style={{ color: C.text, fontWeight: '900', fontSize: 13 }}>{item.name}</Text><Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.source === 'healthkit' ? 'Imported from Apple Health' : item.category}</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: C.text, fontWeight: '900', fontSize: 13 }}>{item.name}</Text>
+            <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.source === 'healthkit' ? 'Imported from Apple Health' : item.source === 'motion' ? 'iPhone motion session' : item.category}</Text>
+            {item.source === 'motion' && <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>{item.steps != null ? item.steps.toLocaleString('en-IN') + ' steps' : 'No step data'}{item.cadenceSpm != null ? ' · ' + item.cadenceSpm + ' spm' : ''}{item.motionSamples != null ? ' · ' + item.motionSamples.toLocaleString('en-IN') + ' samples' : ''}</Text>}
+          </View>
           <View style={{ alignItems: 'flex-end' }}><Text style={{ color: C.text, fontWeight: '900' }}>{item.minutes} min</Text>{item.activeCalories != null && <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>{item.activeCalories} kcal</Text>}</View>
           <TouchableOpacity onPress={() => removeWorkout(item.id)} style={{ marginLeft: 9, padding: 5 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>
         </View>)}
@@ -1001,7 +1159,7 @@ export default function App() {
         <View style={{ flex: 1 }}>
           {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} onSyncAppleHealth={handleAppleHealthSync} healthSyncing={healthSyncing} healthSyncError={healthSyncError} />}
           {tab === 'food' && <FoodScreen data={data} update={update} />}
-          {tab === 'move' && <MoveScreen data={data} update={update} />}
+          <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} /></View>
           {tab === 'progress' && <ProgressScreen data={data} update={update} onReset={() => {
             AsyncStorage.removeItem(STORAGE_KEY)
               .then(() => { setData(null); setTab('today'); })
