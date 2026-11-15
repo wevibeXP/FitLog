@@ -168,6 +168,10 @@ function normalize(value: string): string {
   return value.toLocaleLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+export function getFoodById(id: string): NutritionFood | undefined {
+  return foods.find(food => food.id === id);
+}
+
 export function searchFoods(query: string, limit = 8): NutritionFood[] {
   const q = normalize(query);
   if (!q) return popularIds.map(id => foods.find(food => food.id === id)!).filter(Boolean);
