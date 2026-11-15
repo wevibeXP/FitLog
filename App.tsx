@@ -174,7 +174,7 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
           setMotionMessage('Allow Motion & Fitness access to count steps from this iPhone.');
         } else {
           setMotionStatus('denied');
-          setMotionMessage('Motion access is off. Enable it in iPhone Settings → Privacy & Security → Motion & Fitness.');
+          setMotionMessage('Motion access is off. Open iPhone Settings → Privacy & Security → Motion & Fitness and allow Fitlog.');
         }
       })
       .catch(error => {
@@ -370,7 +370,7 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
         {motionStatus === 'enabled'
           ? <ActionButton label="STEP TRACKING IS ON ✓" disabled onPress={() => {}} tone="soft" />
           : motionStatus === 'denied'
-            ? <ActionButton label="OPEN MOTION SETTINGS" onPress={() => { void Linking.openSettings(); }} tone="soft" />
+            ? <ActionButton label="HOW TO ENABLE MOTION ACCESS" onPress={() => Alert.alert('Enable Motion & Fitness', 'Open iPhone Settings → Privacy & Security → Motion & Fitness, then allow Fitlog.')} tone="soft" />
             : motionStatus === 'unavailable'
               ? <ActionButton label="PEDOMETER UNAVAILABLE" disabled onPress={() => {}} tone="soft" />
               : <ActionButton label={motionStatus === 'checking' ? 'CHECKING MOTION ACCESS…' : 'ENABLE IPHONE STEP TRACKING'} onPress={enableStepTracking} disabled={motionStatus === 'checking'} tone="soft" />}
@@ -857,7 +857,7 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
       <Card style={{ backgroundColor: '#F2ECFB', borderColor: '#E6DDF4', marginBottom: 0 }}>
         <Eyebrow>LIVE IPHONE MOTION SESSION</Eyebrow>
         <Text style={{ color: C.text, fontSize: 17, fontWeight: '900', marginTop: 5 }}>{sessionStartedAt != null ? 'Session in progress' : 'Capture a movement session'}</Text>
-        <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }}>{sessionStartedAt != null ? 'Keep Fitlog open and carry your phone as you move.' : 'Start when you begin. Fitlog records elapsed time, available steps and a summary of the device motion signal.'}</Text>
+        <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }}>{sessionStartedAt != null ? 'Keep Fitlog in the foreground and carry your phone as you move.' : 'Start when you begin. Fitlog records elapsed time, available steps and a summary of the device motion signal.'}</Text>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 13 }}>
           <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 13, padding: 10 }}>
             <Text style={{ color: C.muted, fontSize: 9, fontWeight: '900' }}>TIME</Text>
@@ -1064,7 +1064,7 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
     </Card>
     <Card style={{ backgroundColor: C.mint, borderColor: '#D8E9DC' }}>
       <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginBottom: 6 }}>How did you sleep? 🌙</Text>
-      <Text style={{ color: C.muted, fontSize: 11, marginBottom: 12 }}>Log your sleep duration. Connect Apple Health later for automatic imports.</Text>
+      <Text style={{ color: C.muted, fontSize: 11, marginBottom: 12 }}>Log your sleep duration manually. iPhone motion sensors do not provide sleep stages.</Text>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 9 }}>
         <View style={{ flex: 1 }}><TextField label="Sleep duration" value={sleep} onChange={setSleep} placeholder="e.g. 7.5" keyboardType="decimal-pad" suffix="hours" /></View>
         <View style={{ paddingBottom: 13 }}><ActionButton label="SAVE" onPress={addSleep} /></View>
