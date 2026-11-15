@@ -1021,7 +1021,7 @@ function ProgressScreen({ data, update, onReset }: { data: FitlogData; update: U
       <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 6 }}>
         Period logs you recorded in Apple Health. Fitlog uses HealthKit's recorded cycle-start markers and does not predict your next period or ovulation.
       </Text>
-      {periodCycles.length === 0 ? <EmptyState emoji="🌷" title="No period records imported yet" subtitle="Connect Apple Health on the Today screen, then allow Menstrual Flow access to see your recorded periods here." /> : <>
+      {periodCycles.length === 0 ? <EmptyState emoji="🌷" title="No period records imported yet" subtitle="iPhone motion sensors cannot detect menstrual flow. Cycle records need manual period logging or a separate native HealthKit source." /> : <>
         <View style={{ flexDirection: 'row', gap: 9, marginTop: 14 }}>
           <View style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 12, borderRadius: 14 }}>
             <Text style={{ color: C.rose, fontSize: 9, fontWeight: '900', letterSpacing: 0.5 }}>LAST RECORDED START</Text>
