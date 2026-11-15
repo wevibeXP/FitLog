@@ -27,6 +27,7 @@ import {
   localDateKey,
   WorkoutEntry,
 } from './tracker';
+import type { CycleJournalEntry } from './tracker';
 import { clearFitlogData, loadFitlogData, saveFitlogData } from './storage';
 import FitlogMotion, {
   type NativeMotionCapabilities,
@@ -1605,12 +1606,12 @@ function ProgressScreen({ data, update, onReset, onOpenCycle, selectedDate, onDa
       {lastSleep && <Text style={{ color: C.green, fontSize: 11, fontWeight: '800' }}>Latest: {lastSleep.hours} hours · {lastSleep.date}{lastSleep.source === 'healthkit' ? ' · Apple Health' : ''}</Text>}
     </Card>
     <Card style={{ backgroundColor: '#FFF5F7', borderColor: '#F0DEE5' }}>
-      <Eyebrow>REPRODUCTIVE HEALTH  ✳  APPLE HEALTH</Eyebrow>
+      <Eyebrow>REPRODUCTIVE HEALTH  ✳  CYCLE JOURNAL</Eyebrow>
       <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginTop: 5 }}>Cycle history 🌸</Text>
       <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 6 }}>
         Period entries imported from Apple Health or added manually in Fitlog. The full tracker lets you backfill dates and record optional daily notes.
       </Text>
-      {periodCycles.length === 0 ? <EmptyState emoji="🌷" title="No period records imported yet" subtitle="iPhone motion sensors cannot detect menstrual flow. Cycle records need manual period logging or a separate native HealthKit source." /> : <>
+      {periodCycles.length === 0 ? <EmptyState emoji="🌷" title="No period dates yet" subtitle="Add a manual period entry or import one from Apple Health using the full tracker." /> : <>
         <View style={{ flexDirection: 'row', gap: 9, marginTop: 14 }}>
           <View style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 12, borderRadius: 14 }}>
             <Text style={{ color: C.rose, fontSize: 9, fontWeight: '900', letterSpacing: 0.5 }}>LAST RECORDED START</Text>
@@ -1759,7 +1760,7 @@ function CycleScreen({ data, update, initialDate, onBack }: {
       return;
     }
     const existing = (data.cycleJournal ?? []).find(item => item.date === entryDate);
-    const entry = {
+    const entry: CycleJournalEntry = {
       id: existing?.id ?? makeId(),
       date: entryDate,
       ...(mood ? { mood } : {}),
