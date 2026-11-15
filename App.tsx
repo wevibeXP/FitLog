@@ -125,6 +125,49 @@ function MovementMetric({ emoji, label, value, detail, tint }: { emoji: string; 
   </View>;
 }
 
+
+function shiftDateKey(dateKey: string, offset: number): string {
+  const date = new Date(dateKey + 'T12:00:00');
+  date.setDate(date.getDate() + offset);
+  return localDateKey(date);
+}
+
+function formatDateLabel(dateKey: string): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  }).format(new Date(dateKey + 'T12:00:00'));
+}
+
+function DateNavigator({ selectedDate, onChange, disabled = false }: {
+  selectedDate: string; onChange: (date: string) => void; disabled?: boolean;
+}) {
+  const isToday = selectedDate === localDateKey();
+  return <View style={{
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFFFFF', borderRadius: 17, borderWidth: 1,
+    borderColor: C.line, paddingVertical: 9, paddingHorizontal: 10, marginBottom: 16,
+  }}>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Previous day" disabled={disabled}
+      onPress={() => onChange(shiftDateKey(selectedDate, -1))}
+      style={{ width: 36, height: 34, borderRadius: 12, backgroundColor: C.lilac, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.45 : 1 }}>
+      <Text style={{ color: C.accent, fontSize: 24, fontWeight: '700', lineHeight: 27 }}>‹</Text>
+    </TouchableOpacity>
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <Text style={{ color: C.text, fontSize: 12, fontWeight: '900' }}>{formatDateLabel(selectedDate)}</Text>
+      <Text style={{ color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1, marginTop: 3 }}>{isToday ? 'TODAY' : 'HISTORY'}</Text>
+    </View>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Next day" disabled={disabled || isToday}
+      onPress={() => onChange(shiftDateKey(selectedDate, 1))}
+      style={{ width: 36, height: 34, borderRadius: 12, backgroundColor: C.lilac, alignItems: 'center', justifyContent: 'center', opacity: disabled || isToday ? 0.35 : 1 }}>
+      <Text style={{ color: C.accent, fontSize: 24, fontWeight: '700', lineHeight: 27 }}>›</Text>
+    </TouchableOpacity>
+    {!isToday && <TouchableOpacity accessibilityRole="button" onPress={() => onChange(localDateKey())}
+      style={{ paddingHorizontal: 10, paddingVertical: 9, borderRadius: 12, backgroundColor: C.mint }}>
+      <Text style={{ color: C.green, fontSize: 10, fontWeight: '900' }}>TODAY</Text>
+    </TouchableOpacity>}
+  </View>;
+}
+
 function TabBar({ selected, onSelect }: { selected: Tab; onSelect: (tab: Tab) => void }) {
   const items: { key: Tab; emoji: string; label: string }[] = [
     { key: 'today', emoji: '☀️', label: 'Today' },
@@ -143,15 +186,14 @@ function TabBar({ selected, onSelect }: { selected: Tab; onSelect: (tab: Tab) =>
   </View>;
 }
 
-function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateData; goTo: (tab: Tab) => void }) {
-  const date = localDateKey();
+function TodayScreen({ data, update, goTo, selectedDate, onDateChange }: { data: FitlogData; update: UpdateData; goTo: (tab: Tab) => void; selectedDate: string; onDateChange: (date: string) => void }) {
+  const date = selectedDate;
   const food = data.food.filter(item => item.date === date);
   const workouts = data.workouts.filter(item => item.date === date);
   const water = data.waterByDate[date] || 0;
   const activity = data.activityByDate?.[date];
   const weekDays = Array.from({ length: 7 }, (_, index) => {
-    const day = new Date();
-    day.setHours(12, 0, 0, 0);
+    const day = new Date(date + 'T12:00:00');
     day.setDate(day.getDate() - 6 + index);
     return {
       date: localDateKey(day),
@@ -169,6 +211,7 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
   const [motionMessage, setMotionMessage] = useState('');
   const [activeCaloriesInput, setActiveCaloriesInput] = useState(activity?.activeCalories != null ? String(activity.activeCalories) : '');
   const [activitySaved, setActivitySaved] = useState(false);
+  const [manualCaloriesExpanded, setManualCaloriesExpanded] = useState(false);
   const lastPersistedSteps = useRef(activity?.steps ?? -1);
 
   useEffect(() => {
@@ -236,10 +279,13 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
       subscription = null;
       try {
         const now = new Date();
-        const startOfDay = new Date(now);
-        startOfDay.setHours(0, 0, 0, 0);
+        const startOfDay = new Date(date + 'T00:00:00');
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+        const isSelectedToday = date === localDateKey();
+        const queryEnd = isSelectedToday ? now : endOfDay;
         const [result, previousDays] = await Promise.all([
-          Pedometer.getStepCountAsync(startOfDay, now),
+          Pedometer.getStepCountAsync(startOfDay, queryEnd),
           Promise.all(Array.from({ length: 6 }, async (_, index) => {
             const dayStart = new Date(startOfDay);
             dayStart.setDate(dayStart.getDate() - (6 - index));
@@ -270,9 +316,11 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
         });
         baseSteps = result.steps;
         persistSteps(baseSteps);
-        subscription = Pedometer.watchStepCount(result => {
-          persistSteps(baseSteps + result.steps);
-        });
+        if (isSelectedToday) {
+          subscription = Pedometer.watchStepCount(result => {
+            persistSteps(baseSteps + result.steps);
+          });
+        }
       } catch (error) {
         if (mounted) setMotionMessage(error instanceof Error ? error.message : 'Could not read today’s step count.');
       } finally {
@@ -294,7 +342,9 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
   useEffect(() => {
     setActiveCaloriesInput(activity?.activeCalories != null ? String(activity.activeCalories) : '');
     setActivitySaved(false);
-  }, [date, activity?.activeCalories]);
+    setStepCount(activity?.steps ?? null);
+    lastPersistedSteps.current = activity?.steps ?? -1;
+  }, [date, activity?.activeCalories, activity?.steps]);
 
   const enableStepTracking = async () => {
     setMotionStatus('checking');
@@ -358,8 +408,7 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
   }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
   const target = data.assessment.targetCalories;
   const macros = data.assessment.macros;
-  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
-  const dateLabel = new Intl.DateTimeFormat('en-IN', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
+  const greeting = date === localDateKey() ? (new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening') : 'Looking back';
   const addWater = (amount: number) => update(current => ({ ...current, waterByDate: { ...current.waterByDate, [date]: (current.waterByDate[date] || 0) + amount } }));
 
   return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 28 }}>
@@ -367,12 +416,14 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
       <View>
         <Eyebrow>FITLOG  ✳  YOUR LITTLE WELLNESS SPACE</Eyebrow>
         <Text style={{ color: C.text, fontSize: 28, fontWeight: '900', marginTop: 8 }}>{greeting} ☁️</Text>
-        <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>{dateLabel}</Text>
+        <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>{date === localDateKey() ? 'Your daily snapshot' : 'Reviewing a past day'}</Text>
       </View>
       <View style={{ backgroundColor: C.mint, width: 49, height: 49, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 23 }}>🌼</Text>
       </View>
     </View>
+
+    <DateNavigator selectedDate={selectedDate} onChange={onDateChange} />
 
     <Card style={{ backgroundColor: '#F2ECFB', borderColor: '#E6DDF4' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -428,11 +479,19 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
           </View>)}
         </View>
       </View>
-      <View style={{ marginTop: 15 }}>
-        <TextField label="Active calories (optional manual value)" value={activeCaloriesInput} onChange={value => { setActiveCaloriesInput(value); setActivitySaved(false); }} placeholder="Only enter a trusted value" keyboardType="decimal-pad" suffix="kcal" />
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+        <Text style={{ color: C.muted, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 }}>OPTIONAL MANUAL VALUE</Text>
+        <TouchableOpacity onPress={() => setManualCaloriesExpanded(value => !value)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: C.lilac }}>
+          <Text style={{ color: C.accent, fontSize: 10, fontWeight: '900' }}>{manualCaloriesExpanded ? 'HIDE' : activity?.activeCalories != null ? 'MANUAL · EDIT' : '+ MANUAL'}</Text>
+        </TouchableOpacity>
       </View>
-      <ActionButton label={activitySaved ? 'ACTIVE CALORIES SAVED ✓' : 'SAVE ACTIVE CALORIES'} onPress={saveDailyMovement} tone="soft" />
-      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>{activity?.source === 'pedometer' ? 'Steps are counted by your iPhone. Active calories are separate and are never guessed from step count.' : 'Step totals come from the iPhone pedometer once Motion & Fitness access is enabled. Active calories are not estimated.'}</Text>
+      {manualCaloriesExpanded && <>
+        <View style={{ marginTop: 9 }}>
+          <TextField label="Active calories from a trusted source" value={activeCaloriesInput} onChange={value => { setActiveCaloriesInput(value); setActivitySaved(false); }} placeholder="Only enter a trusted value" keyboardType="decimal-pad" suffix="kcal" />
+        </View>
+        <ActionButton label={activitySaved ? 'ACTIVE CALORIES SAVED ✓' : 'SAVE ACTIVE CALORIES'} onPress={saveDailyMovement} tone="soft" />
+        <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>{activity?.source === 'pedometer' || activity?.source === 'cmpedometer' ? 'Steps are counted by your iPhone. Active calories are separate and are never guessed from step count.' : 'Step totals come from the iPhone pedometer once Motion & Fitness access is enabled. Active calories are not estimated.'}</Text>
+      </>}
     </Card>
 
     <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -482,7 +541,7 @@ function FoodRow({ item }: { item: FoodEntry }) {
 
 type DraftFood = { food: NutritionFood; amount: number; unit: NutritionUnit; estimate: FoodEstimate };
 
-function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
+function FoodScreen({ data, update, selectedDate, onDateChange }: { data: FitlogData; update: UpdateData; selectedDate: string; onDateChange: (date: string) => void }) {
   const [query, setQuery] = useState('');
   const [meal, setMeal] = useState<MealType>('Breakfast');
   const [selectedFood, setSelectedFood] = useState<NutritionFood | null>(null);
@@ -495,7 +554,7 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
   const [customProtein, setCustomProtein] = useState('');
   const [customCarbs, setCustomCarbs] = useState('');
   const [customFat, setCustomFat] = useState('');
-  const date = localDateKey();
+  const date = selectedDate;
   const todaysFood = data.food.filter(item => item.date === date);
   const totals = todaysFood.reduce((sum, item) => ({
     kcal: sum.kcal + item.calories,
@@ -565,7 +624,7 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
     setDraft([]);
     setSelectedFood(null);
     setQuery('');
-    Alert.alert('Meal saved 🌷', 'Fitlog added the estimated calories and macros to today’s diary.');
+    Alert.alert('Meal saved 🌷', 'Fitlog added the estimated calories and macros to ' + formatDateLabel(date) + '’s diary.');
   };
 
   const saveCustomFood = () => {
@@ -596,8 +655,9 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
 
   return <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
     <PageTitle eyebrow="FOOD JOURNAL  ✳  ONE BITE AT A TIME" title="Nourish yourself 🍓" subtitle="Search a food, choose the portion and Fitlog calculates the estimated nutrition for you." />
+    <DateNavigator selectedDate={selectedDate} onChange={onDateChange} />
     <Card style={{ backgroundColor: C.lilac }}>
-      <Eyebrow>TODAY'S TOTAL</Eyebrow>
+      <Eyebrow>{date === localDateKey() ? "TODAY'S TOTAL" : 'DAY TOTAL'}</Eyebrow>
       <Text style={{ color: C.text, fontSize: 31, fontWeight: '900', marginTop: 8 }}>{Math.round(totals.kcal)} <Text style={{ fontSize: 13, color: C.muted }}>kcal logged</Text></Text>
       <Text style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>Protein {Math.round(totals.p)}g  ·  Carbs {Math.round(totals.c)}g  ·  Fat {Math.round(totals.f)}g</Text>
     </Card>
@@ -681,7 +741,7 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
       <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 14 }}>Estimates use typical values per 100 g and standard household portions. Oil, recipe, brand and cooking method can change the real numbers.</Text>
     </Card>
 
-    <Text style={{ color: C.text, fontSize: 19, fontWeight: '900', marginBottom: 10 }}>Today's diary</Text>
+    <Text style={{ color: C.text, fontSize: 19, fontWeight: '900', marginBottom: 10 }}>{date === localDateKey() ? "Today's diary" : 'Diary · ' + formatDateLabel(date)}</Text>
     <Card>
       {todaysFood.length === 0 ? <EmptyState emoji="🥣" title="Nothing logged yet" subtitle="Your saved meals will appear here." /> :
         todaysFood.slice().reverse().map(item => <View key={item.id}>
@@ -695,8 +755,9 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
     </Card>
   </ScrollView>;
 }
-function MoveScreen({ data, update, isActive }: { data: FitlogData; update: UpdateData; isActive: boolean }) {
-  const date = localDateKey();
+function MoveScreen({ data, update, isActive, selectedDate, onDateChange }: { data: FitlogData; update: UpdateData; isActive: boolean; selectedDate: string; onDateChange: (date: string) => void }) {
+  const date = selectedDate;
+  const isSelectedToday = date === localDateKey();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Walk');
   const [minutes, setMinutes] = useState('');
@@ -753,7 +814,7 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
     : data.profile.equationSex === 'male' ? [maleBmr] : [femaleBmr, maleBmr];
   const bmrLow = Math.min(...bmrValues);
   const bmrHigh = Math.max(...bmrValues);
-  const minutesElapsedToday = new Date().getHours() * 60 + new Date().getMinutes();
+  const minutesElapsedToday = isSelectedToday ? new Date().getHours() * 60 + new Date().getMinutes() : 1440;
   const restingEnergyAllowed = data.profile.age >= 18 && !data.assessment.needsReview;
   const restingEnergyLow = Math.round(bmrLow * minutesElapsedToday / 1440);
   const restingEnergyHigh = Math.round(bmrHigh * minutesElapsedToday / 1440);
@@ -810,6 +871,7 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
     setDailySteps(savedSteps ?? null);
     lastPersistedDailySteps.current = savedSteps ?? -1;
     setDailyMotionCapabilities(null);
+    setDailyPedometerStatus('checking');
   }, [date]);
 
   useEffect(() => {
@@ -883,8 +945,11 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
       nativeErrorSubscription = null;
       try {
         const now = new Date();
-        const startOfDay = new Date(now);
-        startOfDay.setHours(0, 0, 0, 0);
+        const startOfDay = new Date(date + 'T00:00:00');
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+        endOfDay.setMilliseconds(-1);
+        const queryEnd = isSelectedToday ? now : endOfDay;
 
         if (FitlogMotion) {
           FitlogMotion.stopUpdates();
@@ -903,16 +968,18 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
             );
             return;
           }
-          const result = await FitlogMotion.queryPedometerData(startOfDay.getTime(), now.getTime());
+          const result = await FitlogMotion.queryPedometerData(startOfDay.getTime(), queryEnd.getTime());
           if (!mounted) return;
           setDailyPedometerStatus('ready');
           persistNativeSnapshot(result);
-          nativeSubscription = FitlogMotion.addListener('onPedometerUpdate', persistNativeSnapshot);
-          nativeErrorSubscription = FitlogMotion.addListener('onPedometerError', () => {
-            if (mounted) setDailyPedometerStatus('error');
-          });
-          const started = FitlogMotion.startUpdates(startOfDay.getTime());
-          if (!started) setDailyPedometerStatus('unavailable');
+          if (isSelectedToday) {
+            nativeSubscription = FitlogMotion.addListener('onPedometerUpdate', persistNativeSnapshot);
+            nativeErrorSubscription = FitlogMotion.addListener('onPedometerError', () => {
+              if (mounted) setDailyPedometerStatus('error');
+            });
+            const started = FitlogMotion.startUpdates(startOfDay.getTime());
+            if (!started) setDailyPedometerStatus('unavailable');
+          }
           return;
         }
 
@@ -929,12 +996,12 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
           setDailyPedometerStatus(permission.canAskAgain ? 'needs-permission' : 'denied');
           return;
         }
-        const result = await Pedometer.getStepCountAsync(startOfDay, now);
+        const result = await Pedometer.getStepCountAsync(startOfDay, queryEnd);
         if (!mounted) return;
         baseSteps = result.steps;
         setDailyPedometerStatus('ready');
         persistSteps(baseSteps);
-        subscription = Pedometer.watchStepCount(result => persistSteps(baseSteps + result.steps));
+        if (isSelectedToday) subscription = Pedometer.watchStepCount(result => persistSteps(baseSteps + result.steps));
       } catch {
         if (mounted) {
           if (FitlogMotion) {
@@ -972,9 +1039,11 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
     try {
       setDailyPedometerStatus('checking');
       if (FitlogMotion) {
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-        await FitlogMotion.queryPedometerData(startOfDay.getTime(), Date.now());
+        const startOfDay = new Date(date + 'T00:00:00');
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+        const queryEnd = isSelectedToday ? Date.now() : endOfDay.getTime();
+        await FitlogMotion.queryPedometerData(startOfDay.getTime(), queryEnd);
         setStepRefreshKey(value => value + 1);
         return;
       }
@@ -1003,6 +1072,10 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
   }, []);
 
   const startMotionSession = async () => {
+    if (!isSelectedToday) {
+      Alert.alert('Choose today for a live session', 'You can add a manual workout to a past date, but live sensor sessions must be recorded today.');
+      return;
+    }
     if (sessionStartedAt != null) return;
     try {
       const available = await DeviceMotion.isAvailableAsync();
@@ -1106,7 +1179,7 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
     setSessionSteps(0);
     setMotionStats({ samples: 0, rms: 0 });
     setMotionSessionMessage('Session saved. Fitlog stores the summary, not the raw motion stream.');
-    Alert.alert('Movement session saved 🌱', item.minutes + ' min' + (item.steps != null ? ' · ' + item.steps.toLocaleString('en-IN') + ' steps' : '') + '. A workout-energy estimate will appear in today’s movement details.');
+    Alert.alert('Movement session saved 🌱', item.minutes + ' min' + (item.steps != null ? ' · ' + item.steps.toLocaleString('en-IN') + ' steps' : '') + '. A workout-energy estimate will appear in that day’s movement details.');
   };
 
   const addWorkout = () => {
@@ -1129,11 +1202,12 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
 
   return <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
     <PageTitle eyebrow="MOVEMENT JOURNAL  ✳  YOUR PACE, YOUR WAY" title="Move a little 🌱" subtitle="Use your iPhone’s motion sensors during a session, or add a workout manually." />
+    <DateNavigator selectedDate={selectedDate} onChange={onDateChange} disabled={sessionStartedAt != null} />
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <Card style={{ flex: 1, backgroundColor: C.mint }}>
         <Text style={{ fontSize: 21 }}>🌼</Text>
         <Text style={{ color: C.text, fontSize: 26, fontWeight: '900', marginTop: 7 }}>{todays.length}</Text>
-        <Text style={{ color: C.green, fontWeight: '800', fontSize: 10 }}>SESSIONS TODAY</Text>
+        <Text style={{ color: C.green, fontWeight: '800', fontSize: 10 }}>SESSIONS</Text>
       </Card>
       <Card style={{ flex: 1, backgroundColor: C.peach }}>
         <Text style={{ fontSize: 21 }}>⏱️</Text>
@@ -1144,12 +1218,12 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
     <Card>
       <Eyebrow>YOUR DAILY ACTIVITY</Eyebrow>
       <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 5, marginBottom: 5 }}>Movement details ✨</Text>
-      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginBottom: 13 }}>A snapshot of your steps, energy and walking activity for today.</Text>
+      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginBottom: 13 }}>A snapshot of your steps, energy and walking activity for this day.</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-        <MovementMetric emoji="👟" label="STEPS" value={dailySteps == null ? '—' : dailySteps.toLocaleString('en-IN')} detail={dailyPedometerStatus === 'ready' ? 'iPhone Pedometer · live while open' : dailyPedometerStatus === 'needs-permission' ? 'Allow Motion & Fitness access' : dailyPedometerStatus === 'denied' ? 'Enable access in iPhone Settings' : dailyPedometerStatus === 'unavailable' ? 'Pedometer unavailable' : dailyPedometerStatus === 'error' ? 'Could not read steps' : 'Checking iPhone sensor…'} tint={C.mint} />
+        <MovementMetric emoji="👟" label="STEPS" value={dailySteps == null ? '—' : dailySteps.toLocaleString('en-IN')} detail={dailyPedometerStatus === 'ready' ? (isSelectedToday ? 'iPhone Pedometer · live while open' : 'iPhone Pedometer · historical total') : dailyPedometerStatus === 'needs-permission' ? 'Allow Motion & Fitness access' : dailyPedometerStatus === 'denied' ? 'Enable access in iPhone Settings' : dailyPedometerStatus === 'unavailable' ? 'Pedometer unavailable' : dailyPedometerStatus === 'error' ? 'Could not read steps' : 'Checking iPhone sensor…'} tint={C.mint} />
         <MovementMetric emoji="📍" label="WALK / RUN DISTANCE" value={displayedDistanceKm == null ? '—' : (todayActivity?.distanceMeters != null ? '' : '~') + displayedDistanceKm.toFixed(2) + ' km'} detail={distanceDetail} tint={C.lilac} />
         <MovementMetric emoji="🔥" label="ACTIVE CALORIES" value={activeEnergyText} detail={activeEnergyDetail} tint={C.peach} />
-        <MovementMetric emoji="🌙" label="RESTING ENERGY" value={restingEnergyText} detail={restingEnergyAllowed ? 'BMR estimate, prorated through today' : 'Not estimated for this profile'} tint={C.butter} />
+        <MovementMetric emoji="🌙" label="RESTING ENERGY" value={restingEnergyText} detail={restingEnergyAllowed ? (isSelectedToday ? 'BMR estimate, prorated through today' : 'Full-day BMR estimate') : 'Not estimated for this profile'} tint={C.butter} />
         <MovementMetric emoji="🪜" label="STAIRS CLIMBED" value={todayActivity?.floorsAscended != null ? String(todayActivity.floorsAscended) : '—'} detail={floorsDetail} tint="#F1ECF8" />
         <MovementMetric emoji="🏃" label="WALK / RUN SPEED" value={walkingRunningSpeedKmh != null ? walkingRunningSpeedKmh.toFixed(1) + ' km/h' : '—'} detail={speedDetail} tint="#FBEFED" />
       </View>
@@ -1443,6 +1517,7 @@ export default function App() {
   const [data, setData] = useState<FitlogData | null>(null);
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<Tab>('today');
+  const [selectedDate, setSelectedDate] = useState(localDateKey());
   const [saveFailed, setSaveFailed] = useState(false);
 
   useEffect(() => {
@@ -1480,9 +1555,9 @@ export default function App() {
       <StatusBar barStyle="dark-content" />
       {!data ? <Onboarding onComplete={(profile) => finishOnboarding(profile)} /> : <>
         <View style={{ flex: 1 }}>
-          {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} />}
-          {tab === 'food' && <FoodScreen data={data} update={update} />}
-          <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} isActive={tab === 'move'} /></View>
+          {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} selectedDate={selectedDate} onDateChange={setSelectedDate} />}
+          {tab === 'food' && <FoodScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} />}
+          <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} isActive={tab === 'move'} selectedDate={selectedDate} onDateChange={setSelectedDate} /></View>
           {tab === 'progress' && <ProgressScreen data={data} update={update} onReset={() => {
             AsyncStorage.removeItem(STORAGE_KEY)
               .then(() => { setData(null); setTab('today'); })
