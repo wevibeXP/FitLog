@@ -1728,7 +1728,7 @@ function CycleScreen({ data, update, initialDate, onBack }: {
   const validDate = (value: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
     const parsed = new Date(value + 'T12:00:00');
-    return !Number.isNaN(parsed.getTime()) && localDateKey(parsed) === value;
+    return !Number.isNaN(parsed.getTime()) && localDateKey(parsed) === value && value <= localDateKey();
   };
   const dayDifference = (later: string, earlier: string) => Math.round(
     (new Date(later + 'T12:00:00').getTime() - new Date(earlier + 'T12:00:00').getTime()) / 86_400_000
