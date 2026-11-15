@@ -322,7 +322,7 @@ function TodayScreen({ data, update, goTo, selectedDate, onDateChange }: { data:
           });
         }
       } catch (error) {
-        if (mounted) setMotionMessage(error instanceof Error ? error.message : 'Could not read today’s step count.');
+        if (mounted) setMotionMessage(error instanceof Error ? error.message : 'Could not read steps for this date.');
       } finally {
         refreshInFlight = false;
       }
@@ -342,9 +342,13 @@ function TodayScreen({ data, update, goTo, selectedDate, onDateChange }: { data:
   useEffect(() => {
     setActiveCaloriesInput(activity?.activeCalories != null ? String(activity.activeCalories) : '');
     setActivitySaved(false);
+  }, [date, activity?.activeCalories]);
+
+  useEffect(() => {
     setStepCount(activity?.steps ?? null);
     lastPersistedSteps.current = activity?.steps ?? -1;
-  }, [date, activity?.activeCalories, activity?.steps]);
+    setManualCaloriesExpanded(false);
+  }, [date]);
 
   const enableStepTracking = async () => {
     setMotionStatus('checking');
@@ -668,7 +672,7 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
         {(['Breakfast', 'Lunch', 'Dinner', 'Snack'] as MealType[]).map(option => <Chip key={option} label={option} selected={meal === option} onPress={() => setMeal(option)} />)}
       </View>
 
-      <TextField label="Search food or dish" value={query} onChange={value => { setQuery(value); setSelectedFood(null); }} placeholder="e.g. 2 eggs, idli, cooked rice" />
+      <TextField label="Search food or dish" value={query} onChange={value => { setQuery(value); setSelectedFood(null); }} placeholder="e.g. coffee, chicken 65, idli, rice" />
       {!selectedFood && <View style={{ marginTop: 1, marginBottom: 10 }}>
         <Text style={{ color: C.muted, fontSize: 10, fontWeight: '800', marginBottom: 8 }}>{query.trim() ? 'MATCHING FOODS' : 'POPULAR STARTERS'}</Text>
         {suggestions.length === 0 ? <View style={{ padding: 13, borderRadius: 14, backgroundColor: '#FFFCFA' }}>
@@ -780,7 +784,7 @@ function MoveScreen({ data, update, isActive, selectedDate, onDateChange }: { da
   const todays = data.workouts.filter(item => item.date === date);
   const totalMinutes = todays.reduce((sum, item) => sum + item.minutes, 0);
 
-  const latestWeightKg = data.weights.slice().sort((a, b) => b.date.localeCompare(a.date))[0]?.kg ?? data.profile.weightKg;
+  const latestWeightKg = data.weights.filter(item => item.date <= date).sort((a, b) => b.date.localeCompare(a.date))[0]?.kg ?? data.profile.weightKg;
   const stepLengthMeters = (data.profile.heightCm / 100) * 0.415;
   const todayActivity = data.activityByDate?.[date];
   const estimatedDistanceKm = dailySteps == null ? null : (dailySteps * stepLengthMeters) / 1000;
