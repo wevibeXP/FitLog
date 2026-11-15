@@ -634,7 +634,7 @@ function FoodRow({ item }: { item: FoodEntry }) {
     <View style={{ flex: 1 }}>
       <Text style={{ color: C.text, fontWeight: '800', fontSize: 13 }}>{item.name}</Text>
       <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.meal} · P {item.protein}g · C {item.carbs}g · F {item.fat}g</Text>
-      <Text style={{ color: C.muted, fontSize: 9, marginTop: 2 }}>{item.estimateMethod === 'catalogue' ? 'Calculated from food catalogue' : item.estimateMethod === 'manual' ? 'Manual estimate' : 'Saved entry'}</Text>
+      <Text style={{ color: C.muted, fontSize: 9, marginTop: 2 }}>{item.estimateSource === 'manual_correction' ? 'Manually corrected' : item.estimateSource === 'ai_photo' ? 'AI photo estimate · reviewed' : item.estimateSource === 'ai_text' ? 'AI text estimate · reviewed' : item.estimateMethod === 'catalogue' ? 'Calculated from food catalogue' : item.estimateMethod === 'manual' ? 'Manual estimate' : 'Saved entry'}</Text>
     </View>
     <Text style={{ color: C.text, fontWeight: '900', fontSize: 13 }}>{item.calories} kcal</Text>
   </View>;
@@ -721,10 +721,15 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
       fat: Math.round(draftTotals.f * 10) / 10,
       createdAt: Date.now(),
       estimateMethod: 'catalogue',
+      estimateSource: 'catalogue',
       ingredients: draft.map(item => ({
         foodId: item.food.id,
         name: item.food.name,
         grams: item.estimate.grams,
+        calories: item.estimate.calories,
+        protein: item.estimate.protein,
+        carbs: item.estimate.carbs,
+        fat: item.estimate.fat,
       })),
     };
     update(current => ({ ...current, food: [...current.food, entry] }));
@@ -748,6 +753,7 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
       fat: Number(customFat) || 0,
       createdAt: Date.now(),
       estimateMethod: 'manual',
+      estimateSource: 'manual',
     };
     update(current => ({ ...current, food: [...current.food, entry] }));
     setCustomName(''); setCustomCalories(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
