@@ -24,7 +24,7 @@ export type WorkoutEntry = {
   category: string;
   minutes: number;
   createdAt: number;
-  source?: 'manual' | 'healthkit' | 'pedometer';
+  source?: 'manual' | 'healthkit' | 'motion';
   healthKitId?: string;
   healthKitActivityType?: number;
   activeCalories?: number;
