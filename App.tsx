@@ -761,16 +761,18 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
 
   const saveCustomFood = () => {
     const kcal = Number(customCalories);
-    if (!customName.trim() || !Number.isFinite(kcal) || kcal < 0) {
-      Alert.alert('Check the custom food', 'Enter a food name and a valid calorie value.');
+    const macros = [customProtein, customCarbs, customFat].map(value => value.trim() === '' ? 0 : Number(value));
+    if (!customName.trim() || !Number.isFinite(kcal) || kcal < 0 ||
+        macros.some(value => !Number.isFinite(value) || value < 0)) {
+      Alert.alert('Check the custom food', 'Enter a food name and valid non-negative calorie and macro values.');
       return;
     }
     const entry: FoodEntry = {
       id: makeId(), date, name: customName.trim(), meal,
       calories: kcal,
-      protein: Number(customProtein) || 0,
-      carbs: Number(customCarbs) || 0,
-      fat: Number(customFat) || 0,
+      protein: macros[0],
+      carbs: macros[1],
+      fat: macros[2],
       createdAt: Date.now(),
       estimateMethod: 'manual',
       estimateSource: 'manual',
