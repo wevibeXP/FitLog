@@ -727,7 +727,10 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
   const metByCategory: Record<string, number> = {
     strength: 3.5, pilates: 3, walk: 3.3, run: 7, cycling: 6, mobility: 2, other: 3,
   };
-  const estimatedWorkoutCalories = todays.reduce((sum, item) => {
+  const hasRecordedWorkoutCalories = todays.some(item => item.activeCalories != null);
+  const hasEstimatedWorkoutCalories = todays.some(item => item.activeCalories == null) && restingEnergyAllowed;
+  const workoutEnergyIsAvailable = hasRecordedWorkoutCalories || hasEstimatedWorkoutCalories;
+  const workoutEnergyValue = todays.reduce((sum, item) => {
     if (item.activeCalories != null) return sum + item.activeCalories;
     if (!restingEnergyAllowed) return sum;
     const met = metByCategory[item.category.toLowerCase()] ?? 3;
@@ -736,17 +739,21 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
   const savedDailyActiveCalories = data.activityByDate?.[date]?.activeCalories;
   const activeEnergyText = savedDailyActiveCalories != null
     ? savedDailyActiveCalories.toLocaleString('en-IN') + ' kcal'
-    : todays.length > 0 && restingEnergyAllowed ? '~' + Math.round(estimatedWorkoutCalories).toLocaleString('en-IN') + ' kcal' : '—';
+    : workoutEnergyIsAvailable
+      ? (hasEstimatedWorkoutCalories ? '~' : '') + Math.round(workoutEnergyValue).toLocaleString('en-IN') + ' kcal'
+      : '—';
   const activeEnergyDetail = savedDailyActiveCalories != null
     ? 'Saved from another device or source'
-    : todays.length > 0 && restingEnergyAllowed ? 'Estimate from logged workout time' : 'Log a session to estimate';
+    : hasRecordedWorkoutCalories && hasEstimatedWorkoutCalories
+      ? 'Recorded and estimated session energy'
+      : hasRecordedWorkoutCalories
+        ? 'Recorded workout calories'
+        : hasEstimatedWorkoutCalories ? 'Estimate from logged workout time' : 'Log a session to estimate';
 
   useEffect(() => {
     const savedSteps = data.activityByDate?.[date]?.steps;
-    if (savedSteps != null) {
-      setDailySteps(savedSteps);
-      lastPersistedDailySteps.current = savedSteps;
-    }
+    setDailySteps(savedSteps ?? null);
+    lastPersistedDailySteps.current = savedSteps ?? -1;
   }, [date, data.activityByDate?.[date]?.steps]);
 
   useEffect(() => {
@@ -951,7 +958,7 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
     setSessionSteps(0);
     setMotionStats({ samples: 0, rms: 0 });
     setMotionSessionMessage('Session saved. Fitlog stores the summary, not the raw motion stream.');
-    Alert.alert('Movement session saved 🌱', item.minutes + ' min' + (item.steps != null ? ' · ' + item.steps.toLocaleString('en-IN') + ' steps' : '') + '. No exercise calories were estimated.');
+    Alert.alert('Movement session saved 🌱', item.minutes + ' min' + (item.steps != null ? ' · ' + item.steps.toLocaleString('en-IN') + ' steps' : '') + '. A workout-energy estimate will appear in today’s movement details.');
   };
 
   const addWorkout = () => {
@@ -992,8 +999,8 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
       <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginBottom: 13 }}>A snapshot of your steps, energy and walking activity for today.</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
         <MovementMetric emoji="👟" label="STEPS" value={dailySteps == null ? '—' : dailySteps.toLocaleString('en-IN')} detail={dailyPedometerStatus === 'ready' ? 'iPhone Pedometer · live while open' : dailyPedometerStatus === 'needs-permission' ? 'Allow Motion & Fitness access' : dailyPedometerStatus === 'denied' ? 'Enable access in iPhone Settings' : dailyPedometerStatus === 'unavailable' ? 'Pedometer unavailable' : dailyPedometerStatus === 'error' ? 'Could not read steps' : 'Checking iPhone sensor…'} tint={C.mint} />
-        <MovementMetric emoji="📍" label="WALK / RUN DISTANCE" value={estimatedDistanceKm == null ? '—' : '~' + estimatedDistanceKm.toFixed(2) + ' km'} detail="Estimated from steps and height" tint={C.lilac} />
-        <MovementMetric emoji="🔥" label="ACTIVE ENERGY" value={activeEnergyText} detail={activeEnergyDetail} tint={C.peach} />
+        <MovementMetric emoji="📍" label="STEP-BASED DISTANCE" value={estimatedDistanceKm == null ? '—' : '~' + estimatedDistanceKm.toFixed(2) + ' km'} detail="Rough walking-stride estimate; gait not separated" tint={C.lilac} />
+        <MovementMetric emoji="🔥" label="WORKOUT CALORIES" value={activeEnergyText} detail={activeEnergyDetail} tint={C.peach} />
         <MovementMetric emoji="🌙" label="RESTING ENERGY" value={restingEnergyText} detail={restingEnergyAllowed ? 'BMR estimate, prorated through today' : 'Not estimated for this profile'} tint={C.butter} />
         <MovementMetric emoji="🪜" label="STAIRS CLIMBED" value="—" detail="Needs native iOS Core Motion readings" tint="#F1ECF8" />
         <MovementMetric emoji="🏃" label="WALK / RUN SPEED" value="—" detail="Live pace needs native iOS Core Motion readings" tint="#FBEFED" />
@@ -1059,7 +1066,7 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
     </Card>
     <Card style={{ backgroundColor: C.butter, borderColor: '#F0E5CA' }}>
       <Text style={{ color: C.text, fontWeight: '900' }}>A note on recovery ☁️</Text>
-      <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>Fitlog doesn't assign calorie credits for workouts. Move because it supports your strength, energy and wellbeing—not to earn food.</Text>
+      <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>Energy values are estimates, not targets or food credits. Move because it supports your strength, energy and wellbeing—not to earn food.</Text>
     </Card>
   </ScrollView>;
 }
