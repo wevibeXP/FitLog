@@ -29,6 +29,10 @@ export type WorkoutEntry = {
   healthKitActivityType?: number;
   activeCalories?: number;
   steps?: number;
+  distanceMeters?: number | null;
+  floorsAscended?: number | null;
+  floorsDescended?: number | null;
+  averagePaceSecondsPerMeter?: number | null;
   cadenceSpm?: number;
   averageMotionMps2?: number;
   motionSamples?: number;
@@ -75,7 +79,13 @@ export type DailyActivityEntry = {
   date: string;
   steps?: number;
   activeCalories?: number;
-  source?: 'manual' | 'healthkit' | 'pedometer';
+  distanceMeters?: number | null;
+  floorsAscended?: number | null;
+  floorsDescended?: number | null;
+  currentPaceSecondsPerMeter?: number | null;
+  averageActivePaceSecondsPerMeter?: number | null;
+  currentCadenceStepsPerSecond?: number | null;
+  source?: 'manual' | 'healthkit' | 'pedometer' | 'cmpedometer';
 };
 
 export type FitlogData = {
