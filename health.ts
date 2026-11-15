@@ -1,3 +1,4 @@
+import { requireOptionalNativeModule } from 'expo';
 import type { CategorySample, WorkoutSample } from '@appeeky/expo-healthkit';
 import type { FitlogData, DailyActivityEntry, PeriodCycleEntry, SleepEntry, WorkoutEntry } from './tracker';
 import { localDateKey } from './tracker';
@@ -8,13 +9,20 @@ let cachedHealthKit: HealthKitApi | null = null;
 
 function getHealthKit(): HealthKitApi {
   if (cachedHealthKit) return cachedHealthKit;
+
+  // Check the native registry before loading the JS wrapper. Expo Go does not
+  // bundle third-party HealthKit code; calling require() first would emit
+  // "Cannot find native module 'ExpoHealthKit'" in the running app.
+  const nativeModule = requireOptionalNativeModule('ExpoHealthKit');
+  if (!nativeModule) {
+    throw new Error('Apple Health needs the Fitlog iOS development build. Expo Go does not include native HealthKit. Your other Fitlog screens should still work normally.');
+  }
+
   try {
-    // Lazy loading keeps the regular Expo Go preview from crashing at startup.
-    // HealthKit actions themselves require the custom iOS development build.
     cachedHealthKit = require('@appeeky/expo-healthkit') as HealthKitApi;
     return cachedHealthKit;
   } catch {
-    throw new Error('Apple Health needs the Fitlog iOS development build. Expo Go does not include native HealthKit.');
+    throw new Error('Fitlog could not initialise Apple Health. Rebuild the iOS development app after installing the HealthKit package.');
   }
 }
 
