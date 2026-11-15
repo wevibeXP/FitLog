@@ -1133,11 +1133,6 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<Tab>('today');
   const [saveFailed, setSaveFailed] = useState(false);
-  const [healthSyncing, setHealthSyncing] = useState(false);
-  const [healthSyncError, setHealthSyncError] = useState<string | null>(null);
-  const dataRef = useRef<FitlogData | null>(null);
-
-  useEffect(() => { dataRef.current = data; }, [data]);
 
   useEffect(() => {
     let active = true;
@@ -1161,53 +1156,6 @@ export default function App() {
       .catch(() => setSaveFailed(true));
   }, [data, ready]);
 
-  useEffect(() => {
-    if (!ready) return;
-    const subscription = subscribeToAppleHealthUpdates(async () => {
-      const current = dataRef.current;
-      if (!current) return;
-      try {
-        const result = await syncAppleHealth(current, { requestAuthorization: false, reason: 'background' });
-        dataRef.current = result.data;
-        setData(result.data);
-        setHealthSyncError(result.summary.queryWarnings.length
-          ? 'Apple Health updated with some unavailable categories: ' + result.summary.queryWarnings.join(' · ')
-          : null);
-      } catch (error) {
-        setHealthSyncError(error instanceof Error ? error.message : 'Background Apple Health sync could not finish.');
-      }
-    });
-    return () => subscription?.remove();
-  }, [ready]);
-
-  const handleAppleHealthSync = async () => {
-    const current = dataRef.current;
-    if (!current) return;
-    setHealthSyncing(true);
-    setHealthSyncError(null);
-    try {
-      const result = await syncAppleHealth(current, {
-        requestAuthorization: true,
-        registerBackgroundDelivery: true,
-        reason: 'manual',
-      });
-      dataRef.current = result.data;
-      setData(result.data);
-      if (result.summary.queryWarnings.length > 0) {
-        setHealthSyncError('Apple Health was checked, but some categories could not be read: ' + result.summary.queryWarnings.join(' · '));
-      } else if (result.summary.steps === null && result.summary.activeCalories === null &&
-                 result.summary.workoutsImported === 0 && result.summary.sleepNightsImported === 0 && result.summary.periodsImported === 0) {
-        setHealthSyncError('Apple Health was checked, but Fitlog did not receive shared samples. Check Health app → profile → Apps and Services → Fitlog, and allow the categories you want to share.');
-      } else {
-        setHealthSyncError(null);
-      }
-    } catch (error) {
-      setHealthSyncError(error instanceof Error ? error.message : 'Apple Health could not be connected. Please try again.');
-    } finally {
-      setHealthSyncing(false);
-    }
-  };
-
   const update: UpdateData = useCallback((recipe: (current: FitlogData) => FitlogData) => setData(current => current ? recipe(current) : current), []);
   const finishOnboarding = (profile: AssessmentInput) => {
     const result = assess(profile);
@@ -1221,7 +1169,7 @@ export default function App() {
       <StatusBar barStyle="dark-content" />
       {!data ? <Onboarding onComplete={(profile) => finishOnboarding(profile)} /> : <>
         <View style={{ flex: 1 }}>
-          {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} onSyncAppleHealth={handleAppleHealthSync} healthSyncing={healthSyncing} healthSyncError={healthSyncError} />}
+          {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} />}
           {tab === 'food' && <FoodScreen data={data} update={update} />}
           <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} /></View>
           {tab === 'progress' && <ProgressScreen data={data} update={update} onReset={() => {
