@@ -15,6 +15,8 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 - Expanded searchable offline food catalogue covering everyday South Indian and Indian meals, staples, ingredients, vegetables, fruits, drinks, dairy, snacks and protein sources, with portion-based calorie and macro estimates.
 - Multi-ingredient meal builder so a meal such as eggs + toast can be totalled together.
 - Optional manual nutrition fallback for foods and homemade recipes not yet in the catalogue.
+- Editable saved food entries with manually corrected calories and macros.
+- Ingredient-level portion review before a meal is saved, with saved ingredient nutrition and estimate provenance.
 - Movement log for strength, Pilates, walking, running, cycling and mobility.
 - Shared day navigation across Today, Food and Move to review and log historical daily entries; future dates are disabled.
 - Water intake quick logging.
@@ -103,7 +105,7 @@ Profile information, food logs, movement data and future cycle-journal records a
 
 ## Not implemented yet
 
-- AI food photo recognition and verified nutrition database lookup.
+- Secure AI food text estimates and photo recognition (requires a server-side AI endpoint; no API key is embedded in the iOS app).
 - Validated walking/running/workout classification from raw sensor data.
 - Background sensor sampling or always-on workout detection.
 - Manual cycle journal, historical period entry and cycle-aware symptom insights (HealthKit period history import is only a partial foundation).
