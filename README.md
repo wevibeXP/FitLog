@@ -5,7 +5,9 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 ## Current MVP
 
 - Six-step onboarding and a provisional energy / macro assessment.
-- iPhone Motion Engine using Expo Sensors: daily step totals from Core Motion and user-started live movement sessions using DeviceMotion.
+- Today dashboard with daily food totals, macro progress, iPhone pedometer steps and optional externally sourced active calories.
+- Move dashboard with detailed daily movement metrics, live iPhone step counts, session logging and movement history.
+- Step-based distance estimate, BMR-based resting-energy estimate and approximate workout energy from logged activity duration.
 - iPhone Motion Engine using Expo Sensors: daily step totals from Core Motion and user-started live movement sessions using DeviceMotion.
 - Live session summaries include elapsed time, available session steps, step cadence and an experimental acceleration RMS signal. Raw motion samples are processed in memory and not saved.
 - Searchable starter food catalogue (including common South Indian and Indian foods) with automatic portion-based calories, protein, carbs and fat estimates.
@@ -36,7 +38,7 @@ npx expo start --go --tunnel --clear
 
 Scan the QR code with the iPhone Camera and open the project in Expo Go. Keep the Codespace running while testing. The iPhone must be carried for the pedometer to count its steps.
 
-## iPhone Motion Engine
+## iPhone Motion Engine and movement metrics
 
 Fitlog uses `expo-sensors`, which is included in Expo Go for iOS.
 
@@ -44,8 +46,11 @@ Fitlog uses `expo-sensors`, which is included in Expo Go for iOS.
 - Live pedometer callbacks pause while Fitlog is backgrounded. Fitlog re-queries the iPhone's step history when you return to the app.
 - DeviceMotion samples are collected only during a session the user explicitly starts. Fitlog stores the session summary (duration, steps, cadence, sample count and RMS signal), not the raw sensor stream.
 - The RMS signal is experimental and depends on phone placement. It is not a validated exercise-intensity classification or calorie estimate.
-- Motion sensors cannot provide heart rate, sleep stages or menstrual-flow records.
-- Motion sensors cannot provide heart rate, sleep stages or menstrual-flow records. Those require separate sources (for example, an optional native HealthKit integration) or manual logging.
+- The Move dashboard's step-based distance is a rough estimate from profile height and an average walking stride. It cannot distinguish walking from running and is not a GPS or native pedometer distance reading.
+- Resting energy is a population-level BMR estimate prorated through the current day. It is not measured by the iPhone.
+- Workout calories are approximate estimates from logged activity category, duration and profile weight. When a daily active-calorie value is entered from another trusted source, that value takes precedence. The app does not infer whole-day active energy from steps or acceleration.
+- The current Expo Go Pedometer wrapper exposes step counts only. Floors climbed and live walking/running pace require the additional native iOS Core Motion readings and a development build; they are shown as unavailable rather than guessed.
+- Motion sensors cannot provide heart rate, sleep stages or menstrual-flow records. Those require separate sources (for example, a native HealthKit integration) or manual logging.
 
 The pedometer API's seven-day history and foreground-only live callback behavior follow the Expo SDK 58 documentation. [Expo Pedometer](https://docs.expo.dev/versions/v58.0.0/sdk/pedometer/) · [Expo Sensors](https://docs.expo.dev/versions/v58.0.0/sdk/sensors/).
 
@@ -59,11 +64,11 @@ This MVP stores profile information, logs, pedometer totals and session summarie
 
 ## Not implemented yet
 
+- Native Core Motion integration for floors climbed and live walking/running pace.
 - AI food photo recognition and verified nutrition database lookup.
-- Automatic sleep, heart-rate or menstrual-cycle capture
 - Validated walking/running/workout classification from raw sensor data.
 - Background sensor sampling or always-on workout detection.
-- Automatic sleep, heart-rate or menstrual-cycle capture (these are not available from the iPhone motion sensors).
+- Automatic sleep, heart-rate or menstrual-cycle capture.
 - Hevy integration.
 - Cloud account, backend sync, export / restore and multi-device support.
 - AI Coach Mode.
