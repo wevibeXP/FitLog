@@ -75,7 +75,7 @@ export type DailyActivityEntry = {
   date: string;
   steps?: number;
   activeCalories?: number;
-  source?: 'manual' | 'healthkit';
+  source?: 'manual' | 'healthkit' | 'pedometer';
 };
 
 export type FitlogData = {
