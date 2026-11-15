@@ -24,14 +24,10 @@ type NativeFitlogMotion = {
   queryPedometerData: (startTimestampMs: number, endTimestampMs: number) => Promise<NativePedometerSnapshot>;
   startUpdates: (startTimestampMs: number) => boolean;
   stopUpdates: () => void;
-  addListener: (
-    eventName: 'onPedometerUpdate',
-    listener: (event: NativePedometerSnapshot) => void
-  ) => { remove: () => void };
-  addListener: (
-    eventName: 'onPedometerError',
-    listener: (event: { message: string }) => void
-  ) => { remove: () => void };
+  addListener: {
+    (eventName: 'onPedometerUpdate', listener: (event: NativePedometerSnapshot) => void): { remove: () => void };
+    (eventName: 'onPedometerError', listener: (event: { message: string }) => void): { remove: () => void };
+  };
 };
 
 // Expo Go doesn't bundle this project-specific native module. The step-only Expo Pedometer
