@@ -20,10 +20,17 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 - Water intake quick logging.
 - Progress check-ins for weight, bust, underbust, waist, lower abdomen, hips, glutes, left/right thighs, upper arms, forearms, calves, neck and manually logged sleep.
 - Measurement history saved as dated snapshots, with cm or inch input (stored consistently in cm).
-- Local persistence on the iPhone using AsyncStorage.
+- Local persistence in an SQLCipher-encrypted SQLite database, with the database key kept in iOS SecureStore.
+- One-time migration of the previous AsyncStorage app-state record into encrypted storage on the first upgraded launch.
 - iOS-only Expo configuration.
 
-## Run in Expo Go
+## Development build requirement
+
+Fitlog's private local data store uses SQLCipher through `expo-sqlite`. SQLCipher is not available in Expo Go, so the complete app must run in a custom iOS development build. The app checks that SQLCipher is present before opening user data and fails closed rather than silently falling back to unencrypted storage.
+
+The first launch after upgrading from the previous AsyncStorage-based version migrates the existing app-state record into SQLCipher. The legacy record is removed only after the encrypted write succeeds. Keep the existing app installed during the upgrade so the migration can read its local data.
+
+## Run in Expo Go (sensor-only preview, not the full app)
 
 Requirements:
 - Node.js 22.13+
@@ -39,7 +46,7 @@ npx tsc --noEmit
 npx expo start --go --tunnel --clear
 ```
 
-Scan the QR code with the iPhone Camera and open the project in Expo Go. Keep the Codespace running while testing. The iPhone must be carried for the pedometer to count its steps. Expo Go includes the step-only fallback; the project-specific Core Motion bridge below is not loaded by Expo Go.
+Expo Go does not include the SQLCipher-enabled native configuration required by Fitlog's private data store. Use the custom development build below for app testing and any data entry. Expo Go is not a supported target for the complete app.
 
 ## Native iOS development build
 
@@ -92,14 +99,15 @@ The current offline catalogue contains a small starter selection of common foods
 
 ## Data and privacy
 
-This MVP stores profile information, logs, pedometer totals and session summaries locally on the device using AsyncStorage. Raw motion samples are not persisted. There is no account, cloud sync, external analytics or server API configured. App removal or clearing its data can delete local entries. AsyncStorage is not an encrypted health-data vault; do not store highly sensitive medical details in this prototype.
+Profile information, food logs, movement data and future cycle-journal records are intended to remain local in an SQLCipher-encrypted SQLite database. A random database key is stored separately in the platform secure store. The app verifies SQLCipher before reading or writing and does not fall back to plaintext if encryption is unavailable. Raw motion samples are not persisted. There is currently no account, cloud sync, external analytics or AI server API configured. App removal, clearing app data or losing the secure database key can make local entries unrecoverable; retain a future encrypted export/backup when that feature is implemented. Cycle, sexual-activity and contraception records will not be sent to an AI service by default.
 
 ## Not implemented yet
 
 - AI food photo recognition and verified nutrition database lookup.
 - Validated walking/running/workout classification from raw sensor data.
 - Background sensor sampling or always-on workout detection.
-- Automatic sleep, heart-rate or menstrual-cycle capture.
+- Manual cycle journal, historical period entry and cycle-aware symptom insights (HealthKit period history import is only a partial foundation).
+- Automatic sleep and heart-rate capture.
 - Hevy integration.
 - Cloud account, backend sync, export / restore and multi-device support.
 - AI Coach Mode.
