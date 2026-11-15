@@ -650,6 +650,10 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
   const [amount, setAmount] = useState('1');
   const [unit, setUnit] = useState<NutritionUnit>('serving');
   const [draft, setDraft] = useState<DraftFood[]>([]);
+  const [mealCaloriesOverride, setMealCaloriesOverride] = useState('');
+  const [mealProteinOverride, setMealProteinOverride] = useState('');
+  const [mealCarbsOverride, setMealCarbsOverride] = useState('');
+  const [mealFatOverride, setMealFatOverride] = useState('');
   const [customMode, setCustomMode] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customCalories, setCustomCalories] = useState('');
@@ -711,18 +715,29 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
       Alert.alert('Your meal is empty', 'Search for a food and add it to your meal first.');
       return;
     }
+    const overrideValues = [mealCaloriesOverride, mealProteinOverride, mealCarbsOverride, mealFatOverride];
+    const parsedOverrides = overrideValues.map(value => value.trim() === '' ? null : Number(value));
+    if (parsedOverrides.some(value => value != null && (!Number.isFinite(value) || value < 0))) {
+      Alert.alert('Check your meal totals', 'Nutrition overrides must be valid non-negative numbers. Leave a field blank to use the ingredient estimate.');
+      return;
+    }
+    const hasManualOverride = parsedOverrides.some(value => value != null);
+    const finalCalories = parsedOverrides[0] ?? draftTotals.kcal;
+    const finalProtein = parsedOverrides[1] ?? draftTotals.p;
+    const finalCarbs = parsedOverrides[2] ?? draftTotals.c;
+    const finalFat = parsedOverrides[3] ?? draftTotals.f;
     const entry: FoodEntry = {
       id: makeId(),
       date,
       name: draft.map(item => item.food.name).join(' + '),
       meal,
-      calories: draftTotals.kcal,
-      protein: Math.round(draftTotals.p * 10) / 10,
-      carbs: Math.round(draftTotals.c * 10) / 10,
-      fat: Math.round(draftTotals.f * 10) / 10,
+      calories: Math.round(finalCalories),
+      protein: Math.round(finalProtein * 10) / 10,
+      carbs: Math.round(finalCarbs * 10) / 10,
+      fat: Math.round(finalFat * 10) / 10,
       createdAt: Date.now(),
-      estimateMethod: 'catalogue',
-      estimateSource: 'catalogue',
+      estimateMethod: hasManualOverride ? 'manual' : 'catalogue',
+      estimateSource: hasManualOverride ? 'manual_correction' : 'catalogue',
       ingredients: draft.map(item => ({
         foodId: item.food.id,
         name: item.food.name,
@@ -735,6 +750,10 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
     };
     update(current => ({ ...current, food: [...current.food, entry] }));
     setDraft([]);
+    setMealCaloriesOverride('');
+    setMealProteinOverride('');
+    setMealCarbsOverride('');
+    setMealFatOverride('');
     setSelectedFood(null);
     setQuery('');
     Alert.alert('Meal saved 🌷', 'Fitlog added the estimated calories and macros to ' + formatDateLabel(date) + '’s diary.');
@@ -893,9 +912,18 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
             <Text style={{ color: C.text, fontSize: 22, fontWeight: '900', marginTop: 3 }}>{draftTotals.kcal} kcal</Text>
             <Text style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>P {draftTotals.p.toFixed(1)}g · C {draftTotals.c.toFixed(1)}g · F {draftTotals.f.toFixed(1)}g</Text>
           </View>
-          <TouchableOpacity onPress={() => setDraft([])}><Text style={{ color: '#B27D87', fontSize: 10, fontWeight: '900' }}>CLEAR</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => { setDraft([]); setMealCaloriesOverride(''); setMealProteinOverride(''); setMealCarbsOverride(''); setMealFatOverride(''); }}><Text style={{ color: '#B27D87', fontSize: 10, fontWeight: '900' }}>CLEAR</Text></TouchableOpacity>
         </View>
-        <View style={{ marginTop: 13 }}><ActionButton label="SAVE MEAL TO DIARY  ✓" onPress={saveMeal} /></View>
+        <View style={{ marginTop: 13 }}>
+          <Text style={{ color: C.muted, fontSize: 10, lineHeight: 15, marginBottom: 9 }}>Optional: correct the final meal total if your recipe, oil or portion differs from the catalogue. Leave blank to keep the ingredient estimate.</Text>
+          <TextField label="Meal calories" value={mealCaloriesOverride} onChange={setMealCaloriesOverride} placeholder={String(draftTotals.kcal)} keyboardType="decimal-pad" suffix="kcal" />
+          <View style={{ flexDirection: 'row', gap: 7 }}>
+            <View style={{ flex: 1 }}><TextField label="Protein" value={mealProteinOverride} onChange={setMealProteinOverride} placeholder={draftTotals.p.toFixed(1)} keyboardType="decimal-pad" suffix="g" /></View>
+            <View style={{ flex: 1 }}><TextField label="Carbs" value={mealCarbsOverride} onChange={setMealCarbsOverride} placeholder={draftTotals.c.toFixed(1)} keyboardType="decimal-pad" suffix="g" /></View>
+            <View style={{ flex: 1 }}><TextField label="Fat" value={mealFatOverride} onChange={setMealFatOverride} placeholder={draftTotals.f.toFixed(1)} keyboardType="decimal-pad" suffix="g" /></View>
+          </View>
+          <ActionButton label="SAVE MEAL TO DIARY  ✓" onPress={saveMeal} />
+        </View>
       </View>}
       <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 14 }}>Estimates use typical values per 100 g and standard household portions. Oil, recipe, brand and cooking method can change the real numbers.</Text>
     </Card>
