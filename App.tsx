@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   AppState,
@@ -660,6 +660,14 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
         Alert.alert('Motion sensor unavailable', 'This device cannot provide live motion data. You can still use the manual workout logger.');
         return;
       }
+      let motionPermission = await DeviceMotion.getPermissionsAsync();
+      if (!motionPermission.granted && motionPermission.canAskAgain) {
+        motionPermission = await DeviceMotion.requestPermissionsAsync();
+      }
+      if (!motionPermission.granted) {
+        Alert.alert('Motion access needed', 'Allow Fitlog to access Motion & Fitness in iPhone Settings to record live movement sessions.');
+        return;
+      }
 
       let canCountSteps = false;
       try {
@@ -1144,7 +1152,7 @@ export default function App() {
     }
   };
 
-  const update: UpdateData = recipe => setData(current => current ? recipe(current) : current);
+  const update: UpdateData = useCallback(recipe => setData(current => current ? recipe(current) : current), []);
   const finishOnboarding = (profile: AssessmentInput) => {
     const result = assess(profile);
     setData(createInitialData(profile, result));
