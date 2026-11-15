@@ -12,10 +12,11 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 - Native iOS Core Motion module wrapping Apple's CMPedometer for steps, distance, floors ascended/descended, pace and cadence.
 - Expo Go fallback using Expo Sensors Pedometer for steps and DeviceMotion for user-started sessions.
 - Live session summaries include elapsed time, available session steps, step cadence and an experimental acceleration RMS signal. Raw motion samples are processed in memory and not saved.
-- Searchable starter food catalogue (including common South Indian and Indian foods) with automatic portion-based calories, protein, carbs and fat estimates.
+- Expanded searchable offline food catalogue covering everyday South Indian and Indian meals, staples, ingredients, vegetables, fruits, drinks, dairy, snacks and protein sources, with portion-based calorie and macro estimates.
 - Multi-ingredient meal builder so a meal such as eggs + toast can be totalled together.
 - Optional manual nutrition fallback for foods and homemade recipes not yet in the catalogue.
 - Movement log for strength, Pilates, walking, running, cycling and mobility.
+- Shared day navigation across Today, Food and Move to review and log historical daily entries; future dates are disabled.
 - Water intake quick logging.
 - Progress check-ins for weight, bust, underbust, waist, lower abdomen, hips, glutes, left/right thighs, upper arms, forearms, calves, neck and manually logged sleep.
 - Measurement history saved as dated snapshots, with cm or inch input (stored consistently in cm).
