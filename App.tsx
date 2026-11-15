@@ -1608,7 +1608,7 @@ function ProgressScreen({ data, update, onReset, onOpenCycle, selectedDate, onDa
       <Eyebrow>REPRODUCTIVE HEALTH  ✳  APPLE HEALTH</Eyebrow>
       <Text style={{ color: C.text, fontWeight: '900', fontSize: 18, marginTop: 5 }}>Cycle history 🌸</Text>
       <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 6 }}>
-        Period logs you recorded in Apple Health. Fitlog uses HealthKit's recorded cycle-start markers and does not predict your next period or ovulation.
+        Period entries imported from Apple Health or added manually in Fitlog. The full tracker lets you backfill dates and record optional daily notes.
       </Text>
       {periodCycles.length === 0 ? <EmptyState emoji="🌷" title="No period records imported yet" subtitle="iPhone motion sensors cannot detect menstrual flow. Cycle records need manual period logging or a separate native HealthKit source." /> : <>
         <View style={{ flexDirection: 'row', gap: 9, marginTop: 14 }}>
@@ -1816,19 +1816,20 @@ function CycleScreen({ data, update, initialDate, onBack }: {
   const bloatingScores: Record<Exclude<CycleBloatingValue, ''>, number> = {
     none: 0, mild: 1, moderate: 2, severe: 3,
   };
-  const classified = journalEntries.map(entry => {
+  const phaseAtDate = (date: string): 'before' | 'period' | 'other' => {
     let phase: 'before' | 'period' | 'other' = 'other';
     let closestDistance = Infinity;
     for (const period of periodEntries) {
-      const offset = dayDifference(entry.date, period.startDate);
+      const offset = dayDifference(date, period.startDate);
       const inWindow = offset >= -5 && offset < daysInPeriod(period);
       if (inWindow && Math.abs(offset) < closestDistance) {
         closestDistance = Math.abs(offset);
         phase = offset < 0 ? 'before' : 'period';
       }
     }
-    return { entry, phase };
-  });
+    return phase;
+  };
+  const classified = journalEntries.map(entry => ({ entry, phase: phaseAtDate(entry.date) }));
   const mean = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
   const patternNotes: string[] = [];
   const beforeMood = classified.filter(item => item.phase === 'before' && item.entry.mood).map(item => moodScores[item.entry.mood as Exclude<CycleMoodValue, ''>]);
@@ -1858,6 +1859,15 @@ function CycleScreen({ data, update, initialDate, onBack }: {
     const b = mean(otherBloating)!;
     if (Math.abs(a - b) >= 0.5) {
       patternNotes.push('Your bloating score averaged ' + a.toFixed(1) + ' around recorded periods and ' + b.toFixed(1) + ' on other logged days.');
+    }
+  }
+  const weightAroundPeriods = data.weights.filter(item => phaseAtDate(item.date) !== 'other').map(item => item.kg);
+  const weightOnOtherDays = data.weights.filter(item => phaseAtDate(item.date) === 'other').map(item => item.kg);
+  if (weightAroundPeriods.length >= 3 && weightOnOtherDays.length >= 3) {
+    const a = mean(weightAroundPeriods)!;
+    const b = mean(weightOnOtherDays)!;
+    if (Math.abs(a - b) >= 0.3) {
+      patternNotes.push('Recorded weight averaged ' + a.toFixed(1) + ' kg in the five days before or during logged periods and ' + b.toFixed(1) + ' kg on other logged days. Hydration, digestion and other factors can also affect these readings.');
     }
   }
 
@@ -1906,6 +1916,7 @@ function CycleScreen({ data, update, initialDate, onBack }: {
           <Text style={{ color: C.rose, fontSize: 10, fontWeight: '900', textTransform: 'capitalize' }}>{item.flow}</Text>
           {item.source === 'manual' && <TouchableOpacity onPress={() => removeManualPeriod(item.id)} style={{ marginLeft: 10, padding: 5 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>}
         </View>)}
+      {periodEntries.length > 1 && <Text style={{ color: C.muted, fontSize: 10, marginTop: 11 }}>Average gap between recorded starts: {averageCycleInterval != null ? averageCycleInterval.toFixed(0) + ' days' : 'not enough valid intervals'}. This describes the logged history only.</Text>}
     </Card>
 
     <Card>
