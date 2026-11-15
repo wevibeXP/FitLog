@@ -19,6 +19,12 @@
     },
     "plugins": [
       [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      [
         "expo-sensors",
         {
           "motionPermission": "Fitlog uses motion data to count steps and measure walking distance, pace and floors climbed. Motion samples are processed on your iPhone and only session summaries are saved."
