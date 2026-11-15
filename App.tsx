@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { DeviceMotion, Pedometer } from 'expo-sensors';
 import Onboarding from './Onboarding';
@@ -26,9 +25,9 @@ import {
   MealType,
   makeId,
   localDateKey,
-  STORAGE_KEY,
   WorkoutEntry,
 } from './tracker';
+import { clearFitlogData, loadFitlogData, saveFitlogData } from './storage';
 import FitlogMotion, {
   type NativeMotionCapabilities,
   type NativePedometerSnapshot,
@@ -1591,28 +1590,31 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('today');
   const [selectedDate, setSelectedDate] = useState(localDateKey());
   const [saveFailed, setSaveFailed] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then(raw => {
-        if (!active || !raw) return;
-        const parsed = JSON.parse(raw) as FitlogData;
-        if (parsed && parsed.version === 1 && parsed.profile && parsed.assessment) setData(parsed);
+    setStorageError(null);
+    loadFitlogData()
+      .then(saved => {
+        if (active && saved) setData(saved);
       })
-      .catch(() => {
-        if (active) Alert.alert('Could not load saved Fitlog data', 'Your previous entries may be unavailable. You can still start a fresh profile on this device.');
+      .catch(error => {
+        if (active) {
+          setStorageError(error instanceof Error ? error.message : 'Fitlog could not unlock its encrypted local database.');
+        }
       })
       .finally(() => { if (active) setReady(true); });
     return () => { active = false; };
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
-    if (!data || !ready) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    if (!data || !ready || storageError) return;
+    saveFitlogData(data)
       .then(() => setSaveFailed(false))
       .catch(() => setSaveFailed(true));
-  }, [data, ready]);
+  }, [data, ready, storageError]);
 
   const update: UpdateData = useCallback((recipe: (current: FitlogData) => FitlogData) => setData(current => current ? recipe(current) : current), []);
   const finishOnboarding = (profile: AssessmentInput) => {
@@ -1623,6 +1625,18 @@ export default function App() {
   };
 
   if (!ready) return <SafeAreaProvider><SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}><LoadingScreen /></SafeAreaView></SafeAreaProvider>;
+  if (storageError) return <SafeAreaProvider>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg, justifyContent: 'center', padding: 24 }}>
+      <Card style={{ backgroundColor: '#FFF5F2', borderColor: '#EFD8D2' }}>
+        <Text style={{ color: C.text, fontSize: 20, fontWeight: '900' }}>Fitlog couldn't unlock your private data 🔐</Text>
+        <Text style={{ color: C.muted, fontSize: 12, lineHeight: 19, marginTop: 10 }}>{storageError}</Text>
+        <Text style={{ color: C.rose, fontSize: 11, lineHeight: 17, marginTop: 10 }}>Your existing database has not been reset. Do not uninstall Fitlog or clear its app data while we investigate.</Text>
+        <View style={{ marginTop: 16 }}>
+          <ActionButton label="RETRY SECURE STORAGE" onPress={() => { setReady(false); setStorageError(null); setLoadAttempt(value => value + 1); }} />
+        </View>
+      </Card>
+    </SafeAreaView>
+  </SafeAreaProvider>;
   return <SafeAreaProvider>
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle="dark-content" />
@@ -1632,7 +1646,7 @@ export default function App() {
           {tab === 'food' && <FoodScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} />}
           <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} isActive={tab === 'move'} selectedDate={selectedDate} onDateChange={setSelectedDate} /></View>
           {tab === 'progress' && <ProgressScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} onReset={() => {
-            AsyncStorage.removeItem(STORAGE_KEY)
+            clearFitlogData()
               .then(() => { setData(null); setSelectedDate(localDateKey()); setTab('today'); })
               .catch(() => Alert.alert('Could not reset', 'Please try again after checking your device storage.'));
           }} />}
