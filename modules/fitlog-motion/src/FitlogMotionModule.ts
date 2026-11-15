@@ -25,8 +25,12 @@ type NativeFitlogMotion = {
   startUpdates: (startTimestampMs: number) => boolean;
   stopUpdates: () => void;
   addListener: (
-    eventName: 'onPedometerUpdate' | 'onPedometerError',
-    listener: (event: NativePedometerSnapshot | { message: string }) => void
+    eventName: 'onPedometerUpdate',
+    listener: (event: NativePedometerSnapshot) => void
+  ) => { remove: () => void };
+  addListener: (
+    eventName: 'onPedometerError',
+    listener: (event: { message: string }) => void
   ) => { remove: () => void };
 };
 
