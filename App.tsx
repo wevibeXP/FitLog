@@ -29,6 +29,10 @@ import {
   STORAGE_KEY,
   WorkoutEntry,
 } from './tracker';
+import FitlogMotion, {
+  type NativeMotionCapabilities,
+  type NativePedometerSnapshot,
+} from './modules/fitlog-motion';
 
 const C = {
   bg: '#FFF9F4',
@@ -214,10 +218,11 @@ function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateD
           activityByDate: {
             ...(current.activityByDate ?? {}),
             [date]: {
+              ...previous,
               date,
               steps: count,
               activeCalories: previous?.activeCalories,
-              source: 'pedometer',
+              source: previous?.source === 'cmpedometer' ? 'cmpedometer' : 'pedometer',
             },
           },
         };
@@ -699,9 +704,12 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
   const [motionSessionMessage, setMotionSessionMessage] = useState('');
   const [dailySteps, setDailySteps] = useState<number | null>(data.activityByDate?.[date]?.steps ?? null);
   const [dailyPedometerStatus, setDailyPedometerStatus] = useState<'checking' | 'ready' | 'needs-permission' | 'denied' | 'unavailable' | 'error'>('checking');
+  const [dailyMotionCapabilities, setDailyMotionCapabilities] = useState<NativeMotionCapabilities | null>(null);
   const [stepRefreshKey, setStepRefreshKey] = useState(0);
   const lastPersistedDailySteps = useRef(data.activityByDate?.[date]?.steps ?? -1);
   const motionSubscription = useRef<{ remove: () => void } | null>(null);
+  const nativePedometerSubscription = useRef<{ remove: () => void } | null>(null);
+  const nativePedometerErrorSubscription = useRef<{ remove: () => void } | null>(null);
   const pedometerSubscription = useRef<{ remove: () => void } | null>(null);
   const motionAccumulator = useRef({ samples: 0, sumSquares: 0 });
   const options = ['Strength', 'Pilates', 'Walk', 'Run', 'Cycling', 'Mobility', 'Other'];
@@ -710,7 +718,32 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
 
   const latestWeightKg = data.weights.slice().sort((a, b) => b.date.localeCompare(a.date))[0]?.kg ?? data.profile.weightKg;
   const stepLengthMeters = (data.profile.heightCm / 100) * 0.415;
+  const todayActivity = data.activityByDate?.[date];
   const estimatedDistanceKm = dailySteps == null ? null : (dailySteps * stepLengthMeters) / 1000;
+  const displayedDistanceKm = todayActivity?.distanceMeters != null
+    ? todayActivity.distanceMeters / 1000
+    : estimatedDistanceKm;
+  const distanceDetail = todayActivity?.distanceMeters != null
+    ? 'iPhone Core Motion distance estimate'
+    : 'Rough stride estimate from steps and height';
+  const paceSecondsPerMeter = todayActivity?.currentPaceSecondsPerMeter && todayActivity.currentPaceSecondsPerMeter > 0
+    ? todayActivity.currentPaceSecondsPerMeter
+    : todayActivity?.averageActivePaceSecondsPerMeter && todayActivity.averageActivePaceSecondsPerMeter > 0
+      ? todayActivity.averageActivePaceSecondsPerMeter
+      : null;
+  const walkingRunningSpeedKmh = paceSecondsPerMeter != null ? 3.6 / paceSecondsPerMeter : null;
+  const speedDetail = todayActivity?.currentPaceSecondsPerMeter != null
+    ? 'Current iPhone walking/running speed'
+    : todayActivity?.averageActivePaceSecondsPerMeter != null
+      ? 'Average active speed today'
+      : dailyMotionCapabilities?.pace === false
+        ? 'Pace unavailable on this iPhone'
+        : FitlogMotion ? 'Appears when Core Motion detects walking or running' : 'Native iOS build required';
+  const floorsDetail = todayActivity?.floorsAscended != null
+    ? 'Apple Core Motion · floors ascended'
+    : dailyMotionCapabilities?.floorCounting === false
+      ? 'Floor counting unavailable on this iPhone'
+      : FitlogMotion ? 'No floors recorded yet today' : 'Native iOS build required';
   const femaleBmr = 10 * latestWeightKg + 6.25 * data.profile.heightCm - 5 * data.profile.age - 161;
   const maleBmr = 10 * latestWeightKg + 6.25 * data.profile.heightCm - 5 * data.profile.age + 5;
   const bmrValues = data.profile.equationSex === 'female' ? [femaleBmr]
@@ -727,39 +760,55 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
   const metByCategory: Record<string, number> = {
     strength: 3.5, pilates: 3, walk: 3.3, run: 7, cycling: 6, mobility: 2, other: 3,
   };
+  const motionSessionSteps = todays.reduce((sum, item) =>
+    sum + (item.source === 'motion' ? (item.steps ?? 0) : 0), 0);
+  const estimatedStepsInManualWalkingSessions = todays.reduce((sum, item) => {
+    if (item.source === 'motion' && item.steps != null) return sum;
+    const type = item.category.toLowerCase();
+    const estimatedCadence = type === 'walk' ? 100 : type === 'run' ? 160 : 0;
+    return sum + item.minutes * estimatedCadence;
+  }, 0);
+  // Subtract session steps from the all-day step count so a walk/run isn't counted twice.
+  const nonSessionSteps = dailySteps == null ? 0 : Math.max(0, dailySteps - motionSessionSteps - estimatedStepsInManualWalkingSessions);
+  const stepCaloriesEstimate = restingEnergyAllowed && dailySteps != null
+    ? ((nonSessionSteps * stepLengthMeters) / 1000) * latestWeightKg * 0.5
+    : 0;
+  const hasStepCaloriesEstimate = restingEnergyAllowed && dailySteps != null;
   const hasRecordedWorkoutCalories = todays.some(item => item.activeCalories != null);
   const hasEstimatedWorkoutCalories = todays.some(item => item.activeCalories == null) && restingEnergyAllowed;
-  const workoutEnergyIsAvailable = hasRecordedWorkoutCalories || hasEstimatedWorkoutCalories;
-  const workoutEnergyValue = todays.reduce((sum, item) => {
+  const sessionCaloriesValue = todays.reduce((sum, item) => {
     if (item.activeCalories != null) return sum + item.activeCalories;
     if (!restingEnergyAllowed) return sum;
     const met = metByCategory[item.category.toLowerCase()] ?? 3;
     return sum + Math.max(0, (met - 1) * 3.5 * latestWeightKg / 200) * item.minutes;
   }, 0);
+  const hasAnyActiveEnergy = hasStepCaloriesEstimate || hasRecordedWorkoutCalories || hasEstimatedWorkoutCalories;
+  const combinedActiveCalories = stepCaloriesEstimate + sessionCaloriesValue;
   const savedDailyActiveCalories = data.activityByDate?.[date]?.activeCalories;
   const activeEnergyText = savedDailyActiveCalories != null
     ? savedDailyActiveCalories.toLocaleString('en-IN') + ' kcal'
-    : workoutEnergyIsAvailable
-      ? (hasEstimatedWorkoutCalories ? '~' : '') + Math.round(workoutEnergyValue).toLocaleString('en-IN') + ' kcal'
+    : hasAnyActiveEnergy && restingEnergyAllowed
+      ? '~' + Math.round(combinedActiveCalories).toLocaleString('en-IN') + ' kcal'
       : '—';
   const activeEnergyDetail = savedDailyActiveCalories != null
-    ? 'Saved from another device or source'
-    : hasRecordedWorkoutCalories && hasEstimatedWorkoutCalories
-      ? 'Recorded and estimated session energy'
-      : hasRecordedWorkoutCalories
-        ? 'Recorded workout calories'
-        : hasEstimatedWorkoutCalories ? 'Estimate from logged workout time' : 'Log a session to estimate';
+    ? 'Full-day value saved from another source'
+    : hasAnyActiveEnergy
+      ? 'Steps ~' + Math.round(stepCaloriesEstimate) + ' + sessions ~' + Math.round(sessionCaloriesValue) + ' kcal'
+      : 'Steps and workout energy estimates unavailable';
 
   useEffect(() => {
     const savedSteps = data.activityByDate?.[date]?.steps;
     setDailySteps(savedSteps ?? null);
     lastPersistedDailySteps.current = savedSteps ?? -1;
-  }, [date, data.activityByDate?.[date]?.steps]);
+    setDailyMotionCapabilities(null);
+  }, [date]);
 
   useEffect(() => {
     if (!isActive) return;
     let mounted = true;
     let subscription: { remove: () => void } | null = null;
+    let nativeSubscription: { remove: () => void } | null = null;
+    let nativeErrorSubscription: { remove: () => void } | null = null;
     let refreshInFlight = false;
     let baseSteps = 0;
 
@@ -775,8 +824,41 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
           ...current,
           activityByDate: {
             ...(current.activityByDate ?? {}),
-            [date]: { date, steps: count, activeCalories: previous?.activeCalories, source: 'pedometer' },
+            [date]: { ...previous, date, steps: count, activeCalories: previous?.activeCalories, source: previous?.source === 'cmpedometer' ? 'cmpedometer' : 'pedometer' },
           },
+        };
+      });
+    };
+
+    const persistNativeSnapshot = (snapshot: NativePedometerSnapshot) => {
+      if (!mounted) return;
+      setDailySteps(snapshot.steps);
+      update(current => {
+        const previous = current.activityByDate?.[date];
+        const next = {
+          ...previous,
+          date,
+          steps: snapshot.steps,
+          activeCalories: previous?.activeCalories,
+          source: 'cmpedometer' as const,
+          distanceMeters: snapshot.distanceMeters ?? null,
+          floorsAscended: snapshot.floorsAscended ?? null,
+          floorsDescended: snapshot.floorsDescended ?? null,
+          currentPaceSecondsPerMeter: snapshot.currentPaceSecondsPerMeter ?? null,
+          averageActivePaceSecondsPerMeter: snapshot.averageActivePaceSecondsPerMeter ?? null,
+          currentCadenceStepsPerSecond: snapshot.currentCadenceStepsPerSecond ?? null,
+        };
+        const same = previous?.steps === next.steps &&
+          previous?.distanceMeters === next.distanceMeters &&
+          previous?.floorsAscended === next.floorsAscended &&
+          previous?.floorsDescended === next.floorsDescended &&
+          previous?.currentPaceSecondsPerMeter === next.currentPaceSecondsPerMeter &&
+          previous?.averageActivePaceSecondsPerMeter === next.averageActivePaceSecondsPerMeter &&
+          previous?.currentCadenceStepsPerSecond === next.currentCadenceStepsPerSecond;
+        if (same) return current;
+        return {
+          ...current,
+          activityByDate: { ...(current.activityByDate ?? {}), [date]: next },
         };
       });
     };
@@ -786,7 +868,41 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
       refreshInFlight = true;
       subscription?.remove();
       subscription = null;
+      nativeSubscription?.remove();
+      nativeSubscription = null;
+      nativeErrorSubscription?.remove();
+      nativeErrorSubscription = null;
       try {
+        const now = new Date();
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+
+        if (FitlogMotion) {
+          FitlogMotion.stopUpdates();
+          const capabilities = FitlogMotion.getCapabilities();
+          if (!mounted) return;
+          setDailyMotionCapabilities(capabilities);
+          if (capabilities.authorizationStatus !== 'authorized') {
+            setDailyPedometerStatus(
+              capabilities.authorizationStatus === 'denied' || capabilities.authorizationStatus === 'restricted'
+                ? 'denied'
+                : 'needs-permission'
+            );
+            return;
+          }
+          const result = await FitlogMotion.queryPedometerData(startOfDay.getTime(), now.getTime());
+          if (!mounted) return;
+          setDailyPedometerStatus('ready');
+          persistNativeSnapshot(result);
+          nativeSubscription = FitlogMotion.addListener('onPedometerUpdate', persistNativeSnapshot);
+          nativeErrorSubscription = FitlogMotion.addListener('onPedometerError', () => {
+            if (mounted) setDailyPedometerStatus('error');
+          });
+          const started = FitlogMotion.startUpdates(startOfDay.getTime());
+          if (!started) setDailyPedometerStatus('unavailable');
+          return;
+        }
+
         const [available, permission] = await Promise.all([
           Pedometer.isAvailableAsync(),
           Pedometer.getPermissionsAsync(),
@@ -800,9 +916,6 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
           setDailyPedometerStatus(permission.canAskAgain ? 'needs-permission' : 'denied');
           return;
         }
-        const now = new Date();
-        const startOfDay = new Date(now);
-        startOfDay.setHours(0, 0, 0, 0);
         const result = await Pedometer.getStepCountAsync(startOfDay, now);
         if (!mounted) return;
         baseSteps = result.steps;
@@ -810,7 +923,19 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
         persistSteps(baseSteps);
         subscription = Pedometer.watchStepCount(result => persistSteps(baseSteps + result.steps));
       } catch {
-        if (mounted) setDailyPedometerStatus('error');
+        if (mounted) {
+          if (FitlogMotion) {
+            const capabilities = FitlogMotion.getCapabilities();
+            setDailyMotionCapabilities(capabilities);
+            setDailyPedometerStatus(
+              capabilities.authorizationStatus === 'denied' || capabilities.authorizationStatus === 'restricted'
+                ? 'denied'
+                : 'error'
+            );
+          } else {
+            setDailyPedometerStatus('error');
+          }
+        }
       } finally {
         refreshInFlight = false;
       }
@@ -823,6 +948,9 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
     return () => {
       mounted = false;
       subscription?.remove();
+      nativeSubscription?.remove();
+      nativeErrorSubscription?.remove();
+      if (FitlogMotion) FitlogMotion.stopUpdates();
       appStateSubscription.remove();
     };
   }, [isActive, date, update, stepRefreshKey]);
@@ -830,6 +958,13 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
   const requestDailyStepAccess = async () => {
     try {
       setDailyPedometerStatus('checking');
+      if (FitlogMotion) {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        await FitlogMotion.queryPedometerData(startOfDay.getTime(), Date.now());
+        setStepRefreshKey(value => value + 1);
+        return;
+      }
       const permission = await Pedometer.requestPermissionsAsync();
       if (!permission.granted) {
         setDailyPedometerStatus('denied');
@@ -837,7 +972,7 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
       }
       setStepRefreshKey(value => value + 1);
     } catch {
-      setDailyPedometerStatus('error');
+      setDailyPedometerStatus(FitlogMotion ? 'denied' : 'error');
     }
   };
 
@@ -999,16 +1134,16 @@ function MoveScreen({ data, update, isActive }: { data: FitlogData; update: Upda
       <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginBottom: 13 }}>A snapshot of your steps, energy and walking activity for today.</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
         <MovementMetric emoji="👟" label="STEPS" value={dailySteps == null ? '—' : dailySteps.toLocaleString('en-IN')} detail={dailyPedometerStatus === 'ready' ? 'iPhone Pedometer · live while open' : dailyPedometerStatus === 'needs-permission' ? 'Allow Motion & Fitness access' : dailyPedometerStatus === 'denied' ? 'Enable access in iPhone Settings' : dailyPedometerStatus === 'unavailable' ? 'Pedometer unavailable' : dailyPedometerStatus === 'error' ? 'Could not read steps' : 'Checking iPhone sensor…'} tint={C.mint} />
-        <MovementMetric emoji="📍" label="STEP-BASED DISTANCE" value={estimatedDistanceKm == null ? '—' : '~' + estimatedDistanceKm.toFixed(2) + ' km'} detail="Rough walking-stride estimate; gait not separated" tint={C.lilac} />
-        <MovementMetric emoji="🔥" label="WORKOUT CALORIES" value={activeEnergyText} detail={activeEnergyDetail} tint={C.peach} />
+        <MovementMetric emoji="📍" label="WALK / RUN DISTANCE" value={displayedDistanceKm == null ? '—' : (todayActivity?.distanceMeters != null ? '' : '~') + displayedDistanceKm.toFixed(2) + ' km'} detail={distanceDetail} tint={C.lilac} />
+        <MovementMetric emoji="🔥" label="ACTIVE CALORIES" value={activeEnergyText} detail={activeEnergyDetail} tint={C.peach} />
         <MovementMetric emoji="🌙" label="RESTING ENERGY" value={restingEnergyText} detail={restingEnergyAllowed ? 'BMR estimate, prorated through today' : 'Not estimated for this profile'} tint={C.butter} />
-        <MovementMetric emoji="🪜" label="STAIRS CLIMBED" value="—" detail="Needs native iOS Core Motion readings" tint="#F1ECF8" />
-        <MovementMetric emoji="🏃" label="WALK / RUN SPEED" value="—" detail="Live pace needs native iOS Core Motion readings" tint="#FBEFED" />
+        <MovementMetric emoji="🪜" label="STAIRS CLIMBED" value={todayActivity?.floorsAscended != null ? String(todayActivity.floorsAscended) : '—'} detail={floorsDetail} tint="#F1ECF8" />
+        <MovementMetric emoji="🏃" label="WALK / RUN SPEED" value={walkingRunningSpeedKmh != null ? walkingRunningSpeedKmh.toFixed(1) + ' km/h' : '—'} detail={speedDetail} tint="#FBEFED" />
       </View>
       {(dailyPedometerStatus === 'needs-permission' || dailyPedometerStatus === 'denied') && <View style={{ marginTop: 2 }}>
         <ActionButton label={dailyPedometerStatus === 'denied' ? 'OPEN IPHONE SETTINGS' : 'ALLOW STEP ACCESS'} onPress={dailyPedometerStatus === 'denied' ? () => { void Linking.openSettings(); } : requestDailyStepAccess} tone="soft" />
       </View>}
-      <Text style={{ color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 11 }}>Distance is a rough walking-stride estimate and cannot separate walking from running. Active energy uses a saved external value when available; otherwise it estimates logged workouts only. Resting energy is a BMR-based estimate. Stairs and live speed need a native iOS build and are not available in Expo Go.</Text>
+      <Text style={{ color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 11 }}>Active calories combine estimated energy from unassigned daily steps and logged sessions, with session steps subtracted to reduce double counting. A full-day value from another trusted source takes precedence. Resting energy is a BMR estimate. Native distance, floors and pace appear when supported by the iPhone; Expo Go shows only the fallback step-distance estimate.</Text>
     </Card>
     <Card>
       <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 15 }}>Choose your movement</Text>
