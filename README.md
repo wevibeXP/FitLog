@@ -5,54 +5,49 @@ Fitlog is an iOS-first personal wellness tracker built with Expo and React Nativ
 ## Current MVP
 
 - Six-step onboarding and a provisional energy / macro assessment.
-- Today dashboard with daily calorie and macro totals, steps walked and active calories.
-- Read-only Apple Health integration for steps, active energy, workouts, sleep and recorded menstrual-flow history, including best-effort background delivery and a manual Sync Now action.
+- Today dashboard with daily calorie and macro totals, iPhone pedometer step counts and optional manually entered active calories.
+- iPhone Motion Engine using Expo Sensors: daily step totals from Core Motion and user-started live movement sessions using DeviceMotion.
+- Live session summaries include elapsed time, available session steps, step cadence and an experimental acceleration RMS signal. Raw motion samples are processed in memory and not saved.
 - Searchable starter food catalogue (including common South Indian and Indian foods) with automatic portion-based calories, protein, carbs and fat estimates.
 - Multi-ingredient meal builder so a meal such as eggs + toast can be totalled together.
 - Optional manual nutrition fallback for foods and homemade recipes not yet in the catalogue.
 - Movement log for strength, Pilates, walking, running, cycling and mobility.
 - Water intake quick logging.
-- Progress check-ins for weight, bust, underbust, waist, lower abdomen, hips, glutes, left/right thighs, upper arms, forearms, calves, neck, sleep and Apple Health cycle history.
+- Progress check-ins for weight, bust, underbust, waist, lower abdomen, hips, glutes, left/right thighs, upper arms, forearms, calves, neck and manually logged sleep.
 - Measurement history saved as dated snapshots, with cm or inch input (stored consistently in cm).
 - Local persistence on the iPhone using AsyncStorage.
 - iOS-only Expo configuration.
 
-## Run the iOS development build
-
-HealthKit is native iOS code and cannot run inside Expo Go. Fitlog uses an Expo development build.
+## Run in Expo Go
 
 Requirements:
 - Node.js 22.13+
-- Expo account
-- Apple Developer Program membership for installing a cloud-built iOS app on a physical iPhone
-- HealthKit capability enabled for bundle identifier `com.wevibexp.fitlog`
+- Expo Go installed on your iPhone
 
-Install and validate:
+Install and validate from the Codespaces terminal:
 
 ```bash
 npm install
 npx expo install --fix
 npx expo-doctor@latest
 npx tsc --noEmit
-npx eas-cli login
-npx eas-cli build --platform ios --profile development
+npx expo start --go --tunnel --clear
 ```
 
-When EAS asks, allow it to configure iOS signing credentials for your Apple Developer account. Install the development build from the EAS build link on the iPhone. Then start Metro using:
+Scan the QR code with the iPhone Camera and open the project in Expo Go. Keep the Codespace running while testing. The iPhone must be carried for the pedometer to count its steps.
 
-```bash
-npx expo start --dev-client --tunnel
-```
+## iPhone Motion Engine
 
-Open the installed Fitlog development app and connect to the development server.
+Fitlog uses `expo-sensors`, which is included in Expo Go for iOS.
 
-## Apple Health permissions and sync
+- The iPhone pedometer reads system-counted steps and can query up to the previous seven days.
+- Live pedometer callbacks pause while Fitlog is backgrounded. Fitlog re-queries the iPhone's step history when you return to the app.
+- DeviceMotion samples are collected only during a session the user explicitly starts. Fitlog stores the session summary (duration, steps, cadence, sample count and RMS signal), not the raw sensor stream.
+- The RMS signal is experimental and depends on phone placement. It is not a validated exercise-intensity classification or calorie estimate.
+- Active calories are not inferred from steps or acceleration. The optional dashboard value remains manual.
+- Motion sensors cannot provide heart rate, sleep stages or menstrual-flow records. Those require separate sources (for example, an optional native HealthKit integration) or manual logging.
 
-Fitlog requests read access only for steps, active energy, workouts, sleep and menstrual-flow records. It does not write to Apple Health. The cycle view derives historical cycle starts from HealthKit's recorded start-of-cycle metadata and calculates averages only from actual recorded start dates; it does not produce period, ovulation or fertility predictions. iOS intentionally does not tell apps whether a read permission was granted; an empty result may mean no samples were shared or access was not allowed. Review access in the Health app under your profile and Apps and Services.
-
-Foreground sync is available from the Today dashboard. The app also registers best-effort HealthKit background delivery. iOS controls delivery timing; steps and active energy updates are generally delivered no more than hourly. Open Fitlog and use Sync Now when you need a fresh reading.
-
-Health data is stored in this prototype's local app storage only; there is no Fitlog cloud upload or account sync. AsyncStorage is not encrypted health-data storage.
+The pedometer API's seven-day history and foreground-only live callback behavior follow the Expo SDK 58 documentation. [Expo Pedometer](https://docs.expo.dev/versions/v58.0.0/sdk/pedometer/) · [Expo Sensors](https://docs.expo.dev/versions/v58.0.0/sdk/sensors/).
 
 ## Food estimate catalogue
 
@@ -60,12 +55,15 @@ The current offline catalogue contains a small starter selection of common foods
 
 ## Data and privacy
 
-This MVP stores profile information, logs and imported cycle history locally on the device using AsyncStorage. There is no account, cloud sync, external analytics or server API configured. App removal or clearing its data can delete local entries. AsyncStorage is not an encrypted health-data vault; do not store highly sensitive medical details in this prototype.
+This MVP stores profile information, logs, pedometer totals and session summaries locally on the device using AsyncStorage. Raw motion samples are not persisted. There is no account, cloud sync, external analytics or server API configured. App removal or clearing its data can delete local entries. AsyncStorage is not an encrypted health-data vault; do not store highly sensitive medical details in this prototype.
 
 ## Not implemented yet
 
 - AI food photo recognition and verified nutrition database lookup.
-
+- Automatic active-energy or calorie-burn estimation.
+- Validated walking/running/workout classification from raw sensor data.
+- Background sensor sampling or always-on workout detection.
+- Automatic sleep, heart-rate or menstrual-cycle capture (these are not available from the iPhone motion sensors).
 - Hevy integration.
 - Cloud account, backend sync, export / restore and multi-device support.
 - AI Coach Mode.
