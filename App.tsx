@@ -655,6 +655,12 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
   const [customProtein, setCustomProtein] = useState('');
   const [customCarbs, setCustomCarbs] = useState('');
   const [customFat, setCustomFat] = useState('');
+  const [editingFoodId, setEditingFoodId] = useState<string | null>(null);
+  const [editFoodName, setEditFoodName] = useState('');
+  const [editCalories, setEditCalories] = useState('');
+  const [editProtein, setEditProtein] = useState('');
+  const [editCarbs, setEditCarbs] = useState('');
+  const [editFat, setEditFat] = useState('');
   const date = selectedDate;
   const todaysFood = data.food.filter(item => item.date === date);
   const totals = todaysFood.reduce((sum, item) => ({
@@ -754,6 +760,44 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
     { text: 'Remove', style: 'destructive', onPress: () => update(current => ({ ...current, food: current.food.filter(item => item.id !== id) })) },
   ]);
 
+  const beginEditFood = (item: FoodEntry) => {
+    setEditingFoodId(item.id);
+    setEditFoodName(item.name);
+    setEditCalories(String(item.calories));
+    setEditProtein(String(item.protein));
+    setEditCarbs(String(item.carbs));
+    setEditFat(String(item.fat));
+  };
+
+  const cancelEditFood = () => setEditingFoodId(null);
+
+  const saveEditedFood = () => {
+    const calories = Number(editCalories);
+    const protein = Number(editProtein);
+    const carbs = Number(editCarbs);
+    const fat = Number(editFat);
+    const values = [calories, protein, carbs, fat];
+    if (!editFoodName.trim() || values.some(value => !Number.isFinite(value) || value < 0)) {
+      Alert.alert('Check your nutrition values', 'Enter a food name and non-negative calorie and macro values.');
+      return;
+    }
+    update(current => ({
+      ...current,
+      food: current.food.map(item => item.id === editingFoodId ? {
+        ...item,
+        name: editFoodName.trim(),
+        calories: Math.round(calories),
+        protein: Math.round(protein * 10) / 10,
+        carbs: Math.round(carbs * 10) / 10,
+        fat: Math.round(fat * 10) / 10,
+        estimateMethod: 'manual',
+        estimateSource: 'manual_correction',
+      } : item),
+    }));
+    setEditingFoodId(null);
+    Alert.alert('Entry updated', 'Your corrected nutrition values are saved in the diary.');
+  };
+
   return <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 22, paddingBottom: 35 }}>
     <PageTitle eyebrow="FOOD JOURNAL  ✳  ONE BITE AT A TIME" title="Nourish yourself 🍓" subtitle="Search a food, choose the portion and Fitlog calculates the estimated nutrition for you." />
     <DateNavigator selectedDate={selectedDate} onChange={onDateChange} />
@@ -827,7 +871,14 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
             <Text style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{item.estimate.grams} g · {item.estimate.calories} kcal</Text>
           </View>
           <Text style={{ color: C.text, fontSize: 11, fontWeight: '900' }}>{item.estimate.protein}g P</Text>
-          <TouchableOpacity onPress={() => setDraft(current => current.filter((_, i) => i !== index))} style={{ marginLeft: 12, padding: 5 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => {
+            setSelectedFood(item.food);
+            setQuery(item.food.name);
+            setAmount(String(item.estimate.grams));
+            setUnit('g');
+            setDraft(current => current.filter((_, i) => i !== index));
+          }} style={{ marginLeft: 8, padding: 5 }}><Text style={{ color: C.accent, fontSize: 9, fontWeight: '900' }}>EDIT</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setDraft(current => current.filter((_, i) => i !== index))} style={{ marginLeft: 5, padding: 5 }}><Text style={{ color: '#B27D87', fontWeight: '900' }}>×</Text></TouchableOpacity>
         </View>)}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 13 }}>
           <View>
@@ -847,12 +898,32 @@ function FoodScreen({ data, update, selectedDate, onDateChange }: { data: Fitlog
       {todaysFood.length === 0 ? <EmptyState emoji="🥣" title="Nothing logged yet" subtitle="Your saved meals will appear here." /> :
         todaysFood.slice().reverse().map(item => <View key={item.id}>
           <FoodRow item={item} />
-          <TouchableOpacity onPress={() => removeFood(item.id)} style={{ alignSelf: 'flex-end', paddingVertical: 5 }}><Text style={{ color: '#B27D87', fontWeight: '800', fontSize: 10 }}>REMOVE</Text></TouchableOpacity>
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 15, paddingVertical: 5 }}>
+            <TouchableOpacity onPress={() => editingFoodId === item.id ? cancelEditFood() : beginEditFood(item)}>
+              <Text style={{ color: C.accent, fontWeight: '900', fontSize: 10 }}>{editingFoodId === item.id ? 'CLOSE EDITOR' : 'EDIT'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => removeFood(item.id)}><Text style={{ color: '#B27D87', fontWeight: '800', fontSize: 10 }}>REMOVE</Text></TouchableOpacity>
+          </View>
+          {editingFoodId === item.id && <View style={{ backgroundColor: '#F7F2FC', borderRadius: 16, borderWidth: 1, borderColor: '#E4D9F2', padding: 13, marginBottom: 10 }}>
+            <Text style={{ color: C.text, fontWeight: '900', marginBottom: 10 }}>Correct this food log</Text>
+            <TextField label="Food / meal name" value={editFoodName} onChange={setEditFoodName} placeholder="Food name" />
+            <TextField label="Calories" value={editCalories} onChange={setEditCalories} placeholder="kcal" keyboardType="decimal-pad" suffix="kcal" />
+            <View style={{ flexDirection: 'row', gap: 7 }}>
+              <View style={{ flex: 1 }}><TextField label="Protein" value={editProtein} onChange={setEditProtein} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+              <View style={{ flex: 1 }}><TextField label="Carbs" value={editCarbs} onChange={setEditCarbs} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+              <View style={{ flex: 1 }}><TextField label="Fat" value={editFat} onChange={setEditFat} placeholder="0" keyboardType="decimal-pad" suffix="g" /></View>
+            </View>
+            <Text style={{ color: C.muted, fontSize: 10, lineHeight: 15, marginBottom: 11 }}>Edits are saved as your manual correction. Use the ingredient editor above to change individual portions before saving a new meal.</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}><ActionButton label="SAVE CORRECTION" onPress={saveEditedFood} /></View>
+              <View style={{ flex: 1 }}><ActionButton label="CANCEL" onPress={cancelEditFood} tone="outline" /></View>
+            </View>
+          </View>}
         </View>)}
     </Card>
     <Card style={{ backgroundColor: C.butter, borderColor: '#F0E5CA' }}>
-      <Text style={{ color: C.text, fontWeight: '900' }}>📷 Food photo scan</Text>
-      <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>Photo recognition is a separate AI feature we can add next. The current catalogue calculator works offline and never guesses from a photo.</Text>
+      <Text style={{ color: C.text, fontWeight: '900' }}>📷 AI food scan · coming next</Text>
+      <Text style={{ color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 5 }}>AI photo and free-text estimates are not connected yet. Fitlog will only add them after a secure backend is configured, and every result will open as an editable draft for you to review before saving.</Text>
     </Card>
   </ScrollView>;
 }
