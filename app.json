@@ -24,6 +24,12 @@
           "motionPermission": "Fitlog uses motion data to count steps and measure walking distance, pace and floors climbed. Motion samples are processed on your iPhone and only session summaries are saved."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "83ee61c6-9a2b-443a-be7b-a2162dc9a167"
+      }
+    },
+    "owner": "wevibe"
   }
 }
