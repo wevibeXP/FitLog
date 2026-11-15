@@ -7,7 +7,7 @@ Pod::Spec.new do |s|
   s.homepage       = 'https://github.com/wevibeXP/FitLog'
   s.license        = { :type => 'MIT' }
   s.source         = { :git => 'https://github.com/wevibeXP/FitLog.git' }
-  s.ios.deployment_target = '15.1'
+  s.ios.deployment_target = '16.4'
   s.swift_version  = '5.9'
   s.static_framework = true
 
