@@ -21,6 +21,12 @@
           "healthUpdatePermission": false,
           "isBackgroundDeliveryEnabled": true
         }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Fitlog uses motion data to count your steps and summarize movement during sessions. Motion samples are processed on your iPhone and only session summaries are saved."
+        }
       ]
     ]
   }
