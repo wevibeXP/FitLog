@@ -112,6 +112,15 @@ function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; 
   </View>;
 }
 
+function MovementMetric({ emoji, label, value, detail, tint }: { emoji: string; label: string; value: string; detail: string; tint: string }) {
+  return <View style={{ width: '48.5%', backgroundColor: tint, borderRadius: 16, padding: 13, marginBottom: 9 }}>
+    <Text style={{ fontSize: 17 }}>{emoji}</Text>
+    <Text style={{ color: C.muted, fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginTop: 8 }}>{label}</Text>
+    <Text style={{ color: C.text, fontSize: 17, fontWeight: '900', marginTop: 5 }}>{value}</Text>
+    <Text style={{ color: C.muted, fontSize: 9, lineHeight: 13, marginTop: 4 }}>{detail}</Text>
+  </View>;
+}
+
 function TabBar({ selected, onSelect }: { selected: Tab; onSelect: (tab: Tab) => void }) {
   const items: { key: Tab; emoji: string; label: string }[] = [
     { key: 'today', emoji: '☀️', label: 'Today' },
@@ -678,7 +687,8 @@ function FoodScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
     </Card>
   </ScrollView>;
 }
-function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) {
+function MoveScreen({ data, update, isActive }: { data: FitlogData; update: UpdateData; isActive: boolean }) {
+  const date = localDateKey();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Walk');
   const [minutes, setMinutes] = useState('');
@@ -687,13 +697,142 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
   const [sessionSteps, setSessionSteps] = useState(0);
   const [motionStats, setMotionStats] = useState({ samples: 0, rms: 0 });
   const [motionSessionMessage, setMotionSessionMessage] = useState('');
+  const [dailySteps, setDailySteps] = useState<number | null>(data.activityByDate?.[date]?.steps ?? null);
+  const [dailyPedometerStatus, setDailyPedometerStatus] = useState<'checking' | 'ready' | 'needs-permission' | 'denied' | 'unavailable' | 'error'>('checking');
+  const [stepRefreshKey, setStepRefreshKey] = useState(0);
+  const lastPersistedDailySteps = useRef(data.activityByDate?.[date]?.steps ?? -1);
   const motionSubscription = useRef<{ remove: () => void } | null>(null);
   const pedometerSubscription = useRef<{ remove: () => void } | null>(null);
   const motionAccumulator = useRef({ samples: 0, sumSquares: 0 });
-  const date = localDateKey();
   const options = ['Strength', 'Pilates', 'Walk', 'Run', 'Cycling', 'Mobility', 'Other'];
   const todays = data.workouts.filter(item => item.date === date);
   const totalMinutes = todays.reduce((sum, item) => sum + item.minutes, 0);
+
+  const latestWeightKg = data.weights.slice().sort((a, b) => b.date.localeCompare(a.date))[0]?.kg ?? data.profile.weightKg;
+  const stepLengthMeters = (data.profile.heightCm / 100) * 0.415;
+  const estimatedDistanceKm = dailySteps == null ? null : (dailySteps * stepLengthMeters) / 1000;
+  const femaleBmr = 10 * latestWeightKg + 6.25 * data.profile.heightCm - 5 * data.profile.age - 161;
+  const maleBmr = 10 * latestWeightKg + 6.25 * data.profile.heightCm - 5 * data.profile.age + 5;
+  const bmrValues = data.profile.equationSex === 'female' ? [femaleBmr]
+    : data.profile.equationSex === 'male' ? [maleBmr] : [femaleBmr, maleBmr];
+  const bmrLow = Math.min(...bmrValues);
+  const bmrHigh = Math.max(...bmrValues);
+  const minutesElapsedToday = new Date().getHours() * 60 + new Date().getMinutes();
+  const restingEnergyAllowed = data.profile.age >= 18 && !data.assessment.needsReview;
+  const restingEnergyLow = Math.round(bmrLow * minutesElapsedToday / 1440);
+  const restingEnergyHigh = Math.round(bmrHigh * minutesElapsedToday / 1440);
+  const restingEnergyText = !restingEnergyAllowed ? '—'
+    : bmrLow === bmrHigh ? '~' + restingEnergyLow.toLocaleString('en-IN') + ' kcal'
+      : '~' + restingEnergyLow.toLocaleString('en-IN') + '–' + restingEnergyHigh.toLocaleString('en-IN') + ' kcal';
+  const metByCategory: Record<string, number> = {
+    strength: 3.5, pilates: 3, walk: 3.3, run: 7, cycling: 6, mobility: 2, other: 3,
+  };
+  const estimatedWorkoutCalories = todays.reduce((sum, item) => {
+    if (item.activeCalories != null) return sum + item.activeCalories;
+    if (!restingEnergyAllowed) return sum;
+    const met = metByCategory[item.category.toLowerCase()] ?? 3;
+    return sum + Math.max(0, (met - 1) * 3.5 * latestWeightKg / 200) * item.minutes;
+  }, 0);
+  const savedDailyActiveCalories = data.activityByDate?.[date]?.activeCalories;
+  const activeEnergyText = savedDailyActiveCalories != null
+    ? savedDailyActiveCalories.toLocaleString('en-IN') + ' kcal'
+    : todays.length > 0 && restingEnergyAllowed ? '~' + Math.round(estimatedWorkoutCalories).toLocaleString('en-IN') + ' kcal' : '—';
+  const activeEnergyDetail = savedDailyActiveCalories != null
+    ? 'Saved from another device or source'
+    : todays.length > 0 && restingEnergyAllowed ? 'Estimate from logged workout time' : 'Log a session to estimate';
+
+  useEffect(() => {
+    const savedSteps = data.activityByDate?.[date]?.steps;
+    if (savedSteps != null) {
+      setDailySteps(savedSteps);
+      lastPersistedDailySteps.current = savedSteps;
+    }
+  }, [date, data.activityByDate?.[date]?.steps]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    let mounted = true;
+    let subscription: { remove: () => void } | null = null;
+    let refreshInFlight = false;
+    let baseSteps = 0;
+
+    const persistSteps = (count: number) => {
+      if (!mounted) return;
+      setDailySteps(count);
+      if (Math.abs(count - lastPersistedDailySteps.current) < 10 && count !== 0) return;
+      lastPersistedDailySteps.current = count;
+      update(current => {
+        const previous = current.activityByDate?.[date];
+        if (previous?.steps === count && previous?.source === 'pedometer') return current;
+        return {
+          ...current,
+          activityByDate: {
+            ...(current.activityByDate ?? {}),
+            [date]: { date, steps: count, activeCalories: previous?.activeCalories, source: 'pedometer' },
+          },
+        };
+      });
+    };
+
+    const refreshToday = async () => {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      subscription?.remove();
+      subscription = null;
+      try {
+        const [available, permission] = await Promise.all([
+          Pedometer.isAvailableAsync(),
+          Pedometer.getPermissionsAsync(),
+        ]);
+        if (!mounted) return;
+        if (!available) {
+          setDailyPedometerStatus('unavailable');
+          return;
+        }
+        if (!permission.granted) {
+          setDailyPedometerStatus(permission.canAskAgain ? 'needs-permission' : 'denied');
+          return;
+        }
+        const now = new Date();
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const result = await Pedometer.getStepCountAsync(startOfDay, now);
+        if (!mounted) return;
+        baseSteps = result.steps;
+        setDailyPedometerStatus('ready');
+        persistSteps(baseSteps);
+        subscription = Pedometer.watchStepCount(result => persistSteps(baseSteps + result.steps));
+      } catch {
+        if (mounted) setDailyPedometerStatus('error');
+      } finally {
+        refreshInFlight = false;
+      }
+    };
+
+    void refreshToday();
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void refreshToday();
+    });
+    return () => {
+      mounted = false;
+      subscription?.remove();
+      appStateSubscription.remove();
+    };
+  }, [isActive, date, update, stepRefreshKey]);
+
+  const requestDailyStepAccess = async () => {
+    try {
+      setDailyPedometerStatus('checking');
+      const permission = await Pedometer.requestPermissionsAsync();
+      if (!permission.granted) {
+        setDailyPedometerStatus('denied');
+        return;
+      }
+      setStepRefreshKey(value => value + 1);
+    } catch {
+      setDailyPedometerStatus('error');
+    }
+  };
 
   useEffect(() => {
     if (sessionStartedAt == null) return;
@@ -847,6 +986,23 @@ function MoveScreen({ data, update }: { data: FitlogData; update: UpdateData }) 
         <Text style={{ color: C.rose, fontWeight: '800', fontSize: 10 }}>MINUTES MOVED</Text>
       </Card>
     </View>
+    <Card>
+      <Eyebrow>YOUR DAILY ACTIVITY</Eyebrow>
+      <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 5, marginBottom: 5 }}>Movement details ✨</Text>
+      <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginBottom: 13 }}>A snapshot of your steps, energy and walking activity for today.</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+        <MovementMetric emoji="👟" label="STEPS" value={dailySteps == null ? '—' : dailySteps.toLocaleString('en-IN')} detail={dailyPedometerStatus === 'ready' ? 'iPhone Pedometer · live while open' : dailyPedometerStatus === 'needs-permission' ? 'Allow Motion & Fitness access' : dailyPedometerStatus === 'denied' ? 'Enable access in iPhone Settings' : dailyPedometerStatus === 'unavailable' ? 'Pedometer unavailable' : dailyPedometerStatus === 'error' ? 'Could not read steps' : 'Checking iPhone sensor…'} tint={C.mint} />
+        <MovementMetric emoji="📍" label="WALK / RUN DISTANCE" value={estimatedDistanceKm == null ? '—' : '~' + estimatedDistanceKm.toFixed(2) + ' km'} detail="Estimated from steps and height" tint={C.lilac} />
+        <MovementMetric emoji="🔥" label="ACTIVE ENERGY" value={activeEnergyText} detail={activeEnergyDetail} tint={C.peach} />
+        <MovementMetric emoji="🌙" label="RESTING ENERGY" value={restingEnergyText} detail={restingEnergyAllowed ? 'BMR estimate, prorated through today' : 'Not estimated for this profile'} tint={C.butter} />
+        <MovementMetric emoji="🪜" label="STAIRS CLIMBED" value="—" detail="Needs native iOS Core Motion readings" tint="#F1ECF8" />
+        <MovementMetric emoji="🏃" label="WALK / RUN SPEED" value="—" detail="Live pace needs native iOS Core Motion readings" tint="#FBEFED" />
+      </View>
+      {(dailyPedometerStatus === 'needs-permission' || dailyPedometerStatus === 'denied') && <View style={{ marginTop: 2 }}>
+        <ActionButton label={dailyPedometerStatus === 'denied' ? 'OPEN IPHONE SETTINGS' : 'ALLOW STEP ACCESS'} onPress={dailyPedometerStatus === 'denied' ? () => { void Linking.openSettings(); } : requestDailyStepAccess} tone="soft" />
+      </View>}
+      <Text style={{ color: C.muted, fontSize: 9, lineHeight: 14, marginTop: 11 }}>Distance is a rough walking-stride estimate and cannot separate walking from running. Active energy uses a saved external value when available; otherwise it estimates logged workouts only. Resting energy is a BMR-based estimate. Stairs and live speed need a native iOS build and are not available in Expo Go.</Text>
+    </Card>
     <Card>
       <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginBottom: 15 }}>Choose your movement</Text>
       <Text style={{ color: C.muted, fontSize: 11, fontWeight: '800', marginBottom: 9 }}>WHAT ARE YOU DOING?</Text>
@@ -1171,7 +1327,7 @@ export default function App() {
         <View style={{ flex: 1 }}>
           {tab === 'today' && <TodayScreen data={data} update={update} goTo={setTab} />}
           {tab === 'food' && <FoodScreen data={data} update={update} />}
-          <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} /></View>
+          <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} isActive={tab === 'move'} /></View>
           {tab === 'progress' && <ProgressScreen data={data} update={update} onReset={() => {
             AsyncStorage.removeItem(STORAGE_KEY)
               .then(() => { setData(null); setTab('today'); })
