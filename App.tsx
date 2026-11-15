@@ -1376,7 +1376,7 @@ function ProgressScreen({ data, update, onReset, selectedDate, onDateChange }: {
   };
   const measurementsThroughDate = data.measurements.filter(item => item.date <= date).slice().sort((a, b) => b.date.localeCompare(a.date));
   const lastSleep = data.sleep.filter(item => item.date <= date).slice().sort((a, b) => b.date.localeCompare(a.date))[0];
-  const periodCycles = (data.periodCycles ?? []).filter(item => item.startDate <= date).slice().sort((a, b) => b.startDate.localeCompare(a.startDate));
+  const periodCycles = (data.periodCycles ?? []).filter(item => item.startDate <= date && item.endDate <= date).slice().sort((a, b) => b.startDate.localeCompare(a.startDate));
   const cycleStartsAscending = periodCycles.map(item => item.startDate).sort();
   const cycleIntervals = cycleStartsAscending.slice(1).map((start, index) => {
     const earlier = new Date(cycleStartsAscending[index] + 'T12:00:00');
@@ -1551,6 +1551,7 @@ export default function App() {
   const finishOnboarding = (profile: AssessmentInput) => {
     const result = assess(profile);
     setData(createInitialData(profile, result));
+    setSelectedDate(localDateKey());
     setTab('today');
   };
 
@@ -1565,7 +1566,7 @@ export default function App() {
           <View style={{ flex: 1, display: tab === 'move' ? 'flex' : 'none' }}><MoveScreen data={data} update={update} isActive={tab === 'move'} selectedDate={selectedDate} onDateChange={setSelectedDate} /></View>
           {tab === 'progress' && <ProgressScreen data={data} update={update} selectedDate={selectedDate} onDateChange={setSelectedDate} onReset={() => {
             AsyncStorage.removeItem(STORAGE_KEY)
-              .then(() => { setData(null); setTab('today'); })
+              .then(() => { setData(null); setSelectedDate(localDateKey()); setTab('today'); })
               .catch(() => Alert.alert('Could not reset', 'Please try again after checking your device storage.'));
           }} />}
           {saveFailed && <Text style={{ color: '#A45F60', fontSize: 10, textAlign: 'center', paddingVertical: 4 }}>Could not save changes to this iPhone. Check available storage.</Text>}
