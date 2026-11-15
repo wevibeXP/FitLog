@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
+  Linking,
   ScrollView,
   StatusBar,
   StyleProp,
@@ -12,11 +14,11 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { DeviceMotion, Pedometer } from 'expo-sensors';
 import Onboarding from './Onboarding';
 import { assess, AssessmentInput } from './assessment';
 import { estimateFood, searchFoods, suggestAmount } from './nutrition';
 import type { NutritionFood, NutritionUnit, FoodEstimate } from './nutrition';
-import { subscribeToAppleHealthUpdates, syncAppleHealth } from './health';
 import {
   createInitialData,
   FitlogData,
@@ -128,44 +130,164 @@ function TabBar({ selected, onSelect }: { selected: Tab; onSelect: (tab: Tab) =>
   </View>;
 }
 
-function TodayScreen({ data, update, goTo, onSyncAppleHealth, healthSyncing, healthSyncError }: { data: FitlogData; update: UpdateData; goTo: (tab: Tab) => void; onSyncAppleHealth: () => void; healthSyncing: boolean; healthSyncError: string | null }) {
+function TodayScreen({ data, update, goTo }: { data: FitlogData; update: UpdateData; goTo: (tab: Tab) => void }) {
   const date = localDateKey();
   const food = data.food.filter(item => item.date === date);
   const workouts = data.workouts.filter(item => item.date === date);
   const water = data.waterByDate[date] || 0;
   const activity = data.activityByDate?.[date];
-  const [stepsInput, setStepsInput] = useState(activity?.steps != null ? String(activity.steps) : '');
+  const [stepCount, setStepCount] = useState<number | null>(activity?.steps ?? null);
+  const [motionStatus, setMotionStatus] = useState<'checking' | 'needs-permission' | 'enabled' | 'denied' | 'unavailable' | 'error'>('checking');
+  const [motionMessage, setMotionMessage] = useState('');
   const [activeCaloriesInput, setActiveCaloriesInput] = useState(activity?.activeCalories != null ? String(activity.activeCalories) : '');
   const [activitySaved, setActivitySaved] = useState(false);
+  const lastPersistedSteps = useRef(activity?.steps ?? -1);
+
   useEffect(() => {
-    setStepsInput(activity?.steps != null ? String(activity.steps) : '');
+    let mounted = true;
+    Promise.all([Pedometer.isAvailableAsync(), Pedometer.getPermissionsAsync()])
+      .then(([available, permission]) => {
+        if (!mounted) return;
+        if (!available) {
+          setMotionStatus('unavailable');
+          setMotionMessage('This device does not expose a pedometer. You can still log workouts manually.');
+        } else if (permission.granted) {
+          setMotionStatus('enabled');
+          setMotionMessage('iPhone step tracking is enabled. Totals refresh when Fitlog is open.');
+        } else if (permission.canAskAgain) {
+          setMotionStatus('needs-permission');
+          setMotionMessage('Allow Motion & Fitness access to count steps from this iPhone.');
+        } else {
+          setMotionStatus('denied');
+          setMotionMessage('Motion access is off. Enable it in iPhone Settings → Privacy & Security → Motion & Fitness.');
+        }
+      })
+      .catch(error => {
+        if (!mounted) return;
+        setMotionStatus('error');
+        setMotionMessage(error instanceof Error ? error.message : 'Could not check the iPhone pedometer.');
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (motionStatus !== 'enabled') return;
+    let mounted = true;
+    let subscription: { remove: () => void } | null = null;
+    let baseSteps = 0;
+    let refreshInFlight = false;
+
+    const persistSteps = (count: number) => {
+      if (!mounted) return;
+      setStepCount(count);
+      if (Math.abs(count - lastPersistedSteps.current) < 10 && count !== 0) return;
+      lastPersistedSteps.current = count;
+      update(current => {
+        const previous = current.activityByDate?.[date];
+        if (previous?.steps === count && previous?.source === 'pedometer') return current;
+        return {
+          ...current,
+          activityByDate: {
+            ...(current.activityByDate ?? {}),
+            [date]: {
+              date,
+              steps: count,
+              activeCalories: previous?.activeCalories,
+              source: 'pedometer',
+            },
+          },
+        };
+      });
+    };
+
+    const refreshToday = async () => {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      subscription?.remove();
+      subscription = null;
+      try {
+        const now = new Date();
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const result = await Pedometer.getStepCountAsync(startOfDay, now);
+        if (!mounted) return;
+        baseSteps = result.steps;
+        persistSteps(baseSteps);
+        subscription = Pedometer.watchStepCount(result => {
+          persistSteps(baseSteps + result.steps);
+        });
+      } catch (error) {
+        if (mounted) setMotionMessage(error instanceof Error ? error.message : 'Could not read today’s step count.');
+      } finally {
+        refreshInFlight = false;
+      }
+    };
+
+    void refreshToday();
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void refreshToday();
+    });
+    return () => {
+      mounted = false;
+      subscription?.remove();
+      appStateSubscription.remove();
+    };
+  }, [motionStatus, date, update]);
+
+  useEffect(() => {
     setActiveCaloriesInput(activity?.activeCalories != null ? String(activity.activeCalories) : '');
     setActivitySaved(false);
-  }, [date, activity?.steps, activity?.activeCalories]);
+  }, [date, activity?.activeCalories]);
+
+  const enableStepTracking = async () => {
+    setMotionStatus('checking');
+    setMotionMessage('');
+    try {
+      const available = await Pedometer.isAvailableAsync();
+      if (!available) {
+        setMotionStatus('unavailable');
+        setMotionMessage('This device does not expose a pedometer.');
+        return;
+      }
+      const permission = await Pedometer.requestPermissionsAsync();
+      if (!permission.granted) {
+        setMotionStatus('denied');
+        setMotionMessage('Motion access was not granted. You can enable it later in iPhone Settings → Privacy & Security → Motion & Fitness.');
+        return;
+      }
+      setMotionStatus('enabled');
+      setMotionMessage('Step tracking is on. Carry your iPhone with you; Fitlog refreshes totals when it is open.');
+    } catch (error) {
+      setMotionStatus('error');
+      setMotionMessage(error instanceof Error ? error.message : 'Could not enable step tracking.');
+    }
+  };
+
   const saveDailyMovement = () => {
-    const steps = stepsInput.trim() === '' ? undefined : Number(stepsInput);
     const activeCalories = activeCaloriesInput.trim() === '' ? undefined : Number(activeCaloriesInput);
-    if (steps === undefined && activeCalories === undefined) {
-      Alert.alert('Add a movement stat', 'Enter your steps, active calories, or both.');
+    if (activeCalories === undefined) {
+      Alert.alert('Add active calories', 'Enter active calories only when you have a trusted value from another device or source.');
       return;
     }
-    if ((steps !== undefined && (!Number.isInteger(steps) || steps < 0 || steps > 100000)) ||
-        (activeCalories !== undefined && (!Number.isFinite(activeCalories) || activeCalories < 0 || activeCalories > 5000))) {
-      Alert.alert('Check those numbers', 'Steps must be 0–100,000 and active calories must be 0–5,000 kcal.');
+    if (!Number.isFinite(activeCalories) || activeCalories < 0 || activeCalories > 5000) {
+      Alert.alert('Check those numbers', 'Active calories must be between 0 and 5,000 kcal.');
       return;
     }
-    update(current => ({
-      ...current,
-      activityByDate: {
-        ...(current.activityByDate || {}),
-        [date]: {
-          date,
-          steps,
-          activeCalories,
-          source: 'manual',
+    update(current => {
+      const previous = current.activityByDate?.[date];
+      return {
+        ...current,
+        activityByDate: {
+          ...(current.activityByDate ?? {}),
+          [date]: {
+            date,
+            steps: previous?.steps ?? stepCount ?? undefined,
+            activeCalories,
+            source: previous?.source === 'pedometer' ? 'pedometer' : 'manual',
+          },
         },
-      },
-    }));
+      };
+    });
     setActivitySaved(true);
   };
   const totals = food.reduce((sum, item) => ({
@@ -193,83 +315,38 @@ function TodayScreen({ data, update, goTo, onSyncAppleHealth, healthSyncing, hea
     </View>
 
     <Card style={{ backgroundColor: '#F2ECFB', borderColor: '#E6DDF4' }}>
-      <Eyebrow>YOUR DAILY NOURISHMENT</Eyebrow>
-      {target === null ? <View style={{ marginTop: 13 }}>
-        <Text style={{ color: C.text, fontSize: 19, fontWeight: '900' }}>Your calorie target is paused</Text>
-        <Text style={{ color: C.muted, fontSize: 12, lineHeight: 19, marginTop: 6 }}>You can still log meals and notice patterns while you get personalised guidance.</Text>
-      </View> : <>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 10 }}>
-          <View>
-            <Text style={{ color: C.accent, fontSize: 38, fontWeight: '900', letterSpacing: -1 }}>{Math.round(totals.calories)}</Text>
-            <Text style={{ color: C.muted, fontSize: 11, fontWeight: '700' }}>calories logged</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end', paddingBottom: 4 }}>
-            <Text style={{ color: C.text, fontSize: 16, fontWeight: '900' }}>{Math.max(0, Math.round(target - totals.calories))}</Text>
-            <Text style={{ color: C.muted, fontSize: 10 }}>remaining of {target}</Text>
-          </View>
-        </View>
-        <ProgressBar value={totals.calories} target={target} color={C.accent} />
-        <View style={{ flexDirection: 'row', marginTop: 17, gap: 8 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: '#7964AE', fontSize: 10, fontWeight: '900', letterSpacing: 0.6 }}>PROTEIN</Text>
-            <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginTop: 4 }}>{Math.round(totals.protein)}<Text style={{ fontSize: 10, color: C.muted }}> / {macros?.proteinG ?? '—'}g</Text></Text>
-            {macros && <ProgressBar value={totals.protein} target={macros.proteinG} color="#A38BD9" />}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: C.green, fontSize: 10, fontWeight: '900', letterSpacing: 0.6 }}>CARBS</Text>
-            <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginTop: 4 }}>{Math.round(totals.carbs)}<Text style={{ fontSize: 10, color: C.muted }}> / {macros?.carbsG ?? '—'}g</Text></Text>
-            {macros && <ProgressBar value={totals.carbs} target={macros.carbsG} color="#8DBA9D" />}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: C.rose, fontSize: 10, fontWeight: '900', letterSpacing: 0.6 }}>FAT</Text>
-            <Text style={{ color: C.text, fontWeight: '900', fontSize: 17, marginTop: 4 }}>{Math.round(totals.fat)}<Text style={{ fontSize: 10, color: C.muted }}> / {macros?.fatG ?? '—'}g</Text></Text>
-            {macros && <ProgressBar value={totals.fat} target={macros.fatG} color="#E5AE98" />}
-          </View>
-        </View>
-      </>}
-    </Card>
-
-    <Card style={{ backgroundColor: '#F2ECFB', borderColor: '#E6DDF4' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flex: 1 }}>
-          <Eyebrow>APPLE HEALTH  ✳  READ-ONLY SYNC</Eyebrow>
-          <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 5 }}>Your health, together 💜</Text>
-          <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }}>
-            {data.healthSync?.lastSyncAt
-              ? 'Last checked ' + new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.healthSync.lastSyncAt))
-              : 'Connect Apple Health to bring in steps, active energy, workouts and sleep.'}
-          </Text>
+          <Eyebrow>IPHONE MOTION ENGINE  ✳  CORE MOTION</Eyebrow>
+          <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 5 }}>Your phone counts your steps 👟</Text>
+          <Text style={{ color: C.muted, fontSize: 11, lineHeight: 17, marginTop: 5 }}>{motionMessage || 'Checking the iPhone pedometer…'}</Text>
         </View>
-        <Text style={{ fontSize: 25, marginLeft: 8 }}>♡</Text>
+        <Text style={{ fontSize: 25, marginLeft: 8 }}>✳</Text>
       </View>
       <View style={{ marginTop: 13 }}>
-        <ActionButton
-          label={healthSyncing ? 'CHECKING APPLE HEALTH…' : data.healthSync?.setupRequested ? 'SYNC APPLE HEALTH NOW' : 'CONNECT & SYNC APPLE HEALTH'}
-          onPress={onSyncAppleHealth}
-          disabled={healthSyncing}
-        />
+        {motionStatus === 'enabled'
+          ? <ActionButton label="STEP TRACKING IS ON ✓" disabled onPress={() => {}} tone="soft" />
+          : motionStatus === 'denied'
+            ? <ActionButton label="OPEN MOTION SETTINGS" onPress={() => { void Linking.openSettings(); }} tone="soft" />
+            : motionStatus === 'unavailable'
+              ? <ActionButton label="PEDOMETER UNAVAILABLE" disabled onPress={() => {}} tone="soft" />
+              : <ActionButton label={motionStatus === 'checking' ? 'CHECKING MOTION ACCESS…' : 'ENABLE IPHONE STEP TRACKING'} onPress={enableStepTracking} disabled={motionStatus === 'checking'} tone="soft" />}
       </View>
-      {healthSyncError && <Text style={{ color: '#A45F60', fontSize: 11, lineHeight: 17, marginTop: 9 }}>{healthSyncError}</Text>}
-      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>
-        Fitlog only reads these categories; it never writes to Apple Health. Read access is controlled in the Health app and iOS does not tell apps which read permissions were granted. A blank value can mean no shared samples or no access.
-      </Text>
-      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 4 }}>
-        Background updates are best-effort and scheduled by iOS. Steps and active energy are generally delivered no more than hourly.
-      </Text>
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>Uses the iPhone’s built-in pedometer—no Apple Health connection required. iOS keeps up to seven days of step history. Live updates pause in the background and refresh when you return to Fitlog.</Text>
     </Card>
 
     <Card style={{ backgroundColor: '#FFFCFA' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View>
           <Eyebrow>DAILY MOVEMENT</Eyebrow>
-          <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 5 }}>Your steps & burn 👟</Text>
+          <Text style={{ color: C.text, fontSize: 18, fontWeight: '900', marginTop: 5 }}>Your steps & energy 👟</Text>
         </View>
         <Text style={{ fontSize: 23 }}>🔥</Text>
       </View>
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 13 }}>
         <View style={{ flex: 1, backgroundColor: C.mint, padding: 13, borderRadius: 16 }}>
           <Text style={{ color: C.green, fontSize: 10, fontWeight: '900', letterSpacing: 0.7 }}>STEPS WALKED</Text>
-          <Text style={{ color: C.text, fontSize: 25, fontWeight: '900', marginTop: 5 }}>{activity?.steps != null ? activity.steps.toLocaleString('en-IN') : '—'}</Text>
+          <Text style={{ color: C.text, fontSize: 25, fontWeight: '900', marginTop: 5 }}>{stepCount != null ? stepCount.toLocaleString('en-IN') : activity?.steps != null ? activity.steps.toLocaleString('en-IN') : '—'}</Text>
           <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>steps today</Text>
         </View>
         <View style={{ flex: 1, backgroundColor: C.peach, padding: 13, borderRadius: 16 }}>
@@ -278,12 +355,11 @@ function TodayScreen({ data, update, goTo, onSyncAppleHealth, healthSyncing, hea
           <Text style={{ color: C.muted, fontSize: 9, marginTop: 3 }}>kcal reported active</Text>
         </View>
       </View>
-      <View style={{ flexDirection: 'row', gap: 9, marginTop: 15 }}>
-        <View style={{ flex: 1 }}><TextField label="Steps" value={stepsInput} onChange={value => { setStepsInput(value); setActivitySaved(false); }} placeholder="e.g. 7,500" keyboardType="numeric" /></View>
-        <View style={{ flex: 1 }}><TextField label="Active calories" value={activeCaloriesInput} onChange={value => { setActiveCaloriesInput(value); setActivitySaved(false); }} placeholder="e.g. 320" keyboardType="decimal-pad" suffix="kcal" /></View>
+      <View style={{ marginTop: 15 }}>
+        <TextField label="Active calories (optional manual value)" value={activeCaloriesInput} onChange={value => { setActiveCaloriesInput(value); setActivitySaved(false); }} placeholder="Only enter a trusted value" keyboardType="decimal-pad" suffix="kcal" />
       </View>
-      <ActionButton label={activitySaved ? 'MOVEMENT STATS SAVED ✓' : 'SAVE DAILY MOVEMENT'} onPress={saveDailyMovement} tone="soft" />
-      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>{activity?.source === 'healthkit' ? 'Synced from Apple Health. You can still enter a manual correction above.' : 'Manual entry. Connect Apple Health above to import steps and active energy automatically.'}</Text>
+      <ActionButton label={activitySaved ? 'ACTIVE CALORIES SAVED ✓' : 'SAVE ACTIVE CALORIES'} onPress={saveDailyMovement} tone="soft" />
+      <Text style={{ color: C.muted, fontSize: 10, lineHeight: 16, marginTop: 9 }}>{activity?.source === 'pedometer' ? 'Steps are counted by your iPhone. Active calories are separate and are never guessed from step count.' : 'Step totals come from the iPhone pedometer once Motion & Fitness access is enabled. Active calories are not estimated.'}</Text>
     </Card>
 
     <View style={{ flexDirection: 'row', gap: 10 }}>
